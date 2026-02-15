@@ -9,29 +9,42 @@ st.set_page_config(page_title="Personal Finance Dashboard", layout="wide")
 st.title("💰 Personal Finance Dashboard")
 
 # -----------------------------
-# Load data (Google Sheets with refresh)
+# Load data (Bulletproof Google Sheets)
 # -----------------------------
 @st.cache_data(ttl=60)  # refresh every 60 seconds
 def load_data():
     url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pub?gid=1013390825&single=true&output=csv"
     df = pd.read_csv(url)
 
-    # Standardize columns
+    # Standardize column names
     df.columns = ["Date", "Category", "Type", "Amount"]
 
-    # -----------------------------
-    # Clean & parse data
-    # -----------------------------
+    # Clean Amount
+    df["Amount"] = (
+        df["Amount"]
+        .astype(str)
+        .str.replace("$", "", regex=False)
+        .str.replace(",", "", regex=False)
+        .str.strip()
+    )
     df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce")
 
-    # Parse dates like 02/01/26
-    df["Date"] = pd.to_datetime(df["Date"], format="%m/%d/%y", errors="coerce")
+    # Robust date parsing (prevents missing rows)
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce", infer_datetime_format=True)
 
-    # Drop rows with invalid data
-    df = df.dropna(subset=["Date", "Amount"])
+    # Retry parsing failed dates
+    mask = df["Date"].isna()
+    if mask.any():
+        df.loc[mask, "Date"] = pd.to_datetime(
+            df.loc[mask, "Date"], errors="coerce", dayfirst=False
+        )
 
-    # Create Month column from Date
+    # Create Month column
     df["Month"] = df["Date"].dt.strftime("%B")
+    df["Month"] = df["Month"].fillna("Unknown")
+
+    # Drop rows only if Amount missing
+    df = df.dropna(subset=["Amount"])
 
     return df
 
@@ -42,9 +55,12 @@ if st.sidebar.button("🔄 Refresh Data"):
 df = load_data()
 
 # -----------------------------
-# Month ordering (automatic & correct)
+# Month ordering
 # -----------------------------
-MONTH_ORDER = list(pd.date_range("2026-01-01", periods=12, freq="MS").strftime("%B"))
+MONTH_ORDER = [
+    "January","February","March","April","May","June",
+    "July","August","September","October","November","December","Unknown"
+]
 
 df["Month"] = pd.Categorical(df["Month"], categories=MONTH_ORDER, ordered=True)
 
@@ -83,7 +99,21 @@ include_income = st.sidebar.toggle("Include Income in Charts", value=False)
 df_filtered = df[df["Month"].isin(selected_months)]
 
 # -----------------------------
-# Exclusion rules (charts only)
+# Data Quality Checks
+# -----------------------------
+with st.expander("⚠️ Data Quality Warnings"):
+    missing_dates = df[df["Month"] == "Unknown"]
+    if not missing_dates.empty:
+        st.warning(f"{len(missing_dates)} rows have invalid or missing dates.")
+        st.dataframe(missing_dates)
+    else:
+        st.success("No date issues detected.")
+
+    st.write("Total rows loaded:", len(df))
+    st.write("Rows after filters:", len(df_filtered))
+
+# -----------------------------
+# Exclusion rules
 # -----------------------------
 EXCLUDE_KEYWORDS = [
     "total",
@@ -121,7 +151,6 @@ fig_summary = px.bar(
     barmode="group",
     title="Expected vs Actual by Category Group"
 )
-
 fig_summary.update_layout(template="plotly_white")
 st.plotly_chart(fig_summary, use_container_width=True)
 
@@ -144,7 +173,6 @@ fig_trend = px.line(
     markers=True,
     title="Total Actual Spending by Month"
 )
-
 fig_trend.update_layout(template="plotly_white")
 st.plotly_chart(fig_trend, use_container_width=True)
 
@@ -171,12 +199,11 @@ fig_variance = px.bar(
     color="Variance",
     title="Over / Under Budget"
 )
-
 fig_variance.update_layout(template="plotly_white")
 st.plotly_chart(fig_variance, use_container_width=True)
 
 # -----------------------------
-# Top 10 Spending Categories
+# Top 10 Spending Categories (Mortgage excluded)
 # -----------------------------
 st.subheader("🏆 Top 10 Spending Categories")
 
@@ -199,12 +226,11 @@ fig_top10 = px.bar(
     orientation="h",
     title="Top 10 Spending Categories"
 )
-
 fig_top10.update_layout(template="plotly_white", yaxis=dict(autorange="reversed"))
 st.plotly_chart(fig_top10, use_container_width=True)
 
 # -----------------------------
-# Monthly Trend for Top 10 Categories
+# Monthly Trend for Top 10
 # -----------------------------
 st.subheader("📊 Monthly Trend — Top 10 Categories")
 
@@ -229,7 +255,6 @@ fig_monthly_top10 = px.bar(
     facet_col_wrap=2,
     title="Monthly Spending for Top Categories"
 )
-
 fig_monthly_top10.update_layout(template="plotly_white", height=1000)
 st.plotly_chart(fig_monthly_top10, use_container_width=True)
 
@@ -248,7 +273,7 @@ col2.metric("Expected Spending", f"${expected_total:,.0f}")
 col3.metric("Over / Under", f"${variance_total:,.0f}")
 
 # -----------------------------
-# Raw Data (always shows everything loaded)
+# Raw Data
 # -----------------------------
 with st.expander("Show Raw Data"):
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df_filtered, use_container_width=True)
