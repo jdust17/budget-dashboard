@@ -11,33 +11,27 @@ st.title("💰 Personal Finance Dashboard")
 # -----------------------------
 # Load data (BULLETPROOF VERSION)
 # -----------------------------
-@st.cache_data
+# -----------------------------
+# Load data (Google Sheets with refresh)
+# -----------------------------
+@st.cache_data(ttl=60)  # refresh every 60 seconds
 def load_data():
-    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pub?gid=1013390825&single=true&output=csv"
-
+    url = "YOUR_GOOGLE_SHEET_CSV_URL"
     df = pd.read_csv(url)
 
-    # Ensure only first 4 columns are used
-    df = df.iloc[:, :4]
+    # Standardize columns
     df.columns = ["Month", "Category", "Type", "Amount"]
 
-    # Strip whitespace
-    df["Month"] = df["Month"].astype(str).str.strip()
-    df["Category"] = df["Category"].astype(str).str.strip()
-    df["Type"] = df["Type"].astype(str).str.strip()
-
-    # Robust amount cleaning (handles $, commas, spaces, unicode)
-    df["Amount"] = (
-        df["Amount"]
-        .astype(str)
-        .str.replace(r"[^\d.\-]", "", regex=True)
-    )
+    # Clean data
     df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce")
-
-    # Drop bad rows
     df = df.dropna(subset=["Amount"])
+    df["Month"] = df["Month"].astype(str)
 
     return df
+
+# Manual refresh button
+if st.sidebar.button("🔄 Refresh Data"):
+    st.cache_data.clear()
 
 df = load_data()
 
@@ -258,3 +252,4 @@ col3.metric("Over / Under", f"${variance_total:,.0f}")
 # -----------------------------
 with st.expander("Show Raw Data"):
     st.dataframe(df_filtered, use_container_width=True)
+
