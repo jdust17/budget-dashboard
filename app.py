@@ -9,9 +9,6 @@ st.set_page_config(page_title="Personal Finance Dashboard", layout="wide")
 st.title("💰 Personal Finance Dashboard")
 
 # -----------------------------
-# Load data (BULLETPROOF VERSION)
-# -----------------------------
-# -----------------------------
 # Load data (Google Sheets with refresh)
 # -----------------------------
 @st.cache_data(ttl=60)  # refresh every 60 seconds
@@ -20,12 +17,21 @@ def load_data():
     df = pd.read_csv(url)
 
     # Standardize columns
-    df.columns = ["Month", "Category", "Type", "Amount"]
+    df.columns = ["Date", "Category", "Type", "Amount"]
 
-    # Clean data
+    # -----------------------------
+    # Clean & parse data
+    # -----------------------------
     df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce")
-    df = df.dropna(subset=["Amount"])
-    df["Month"] = df["Month"].astype(str)
+
+    # Parse dates like 02/01/26
+    df["Date"] = pd.to_datetime(df["Date"], format="%m/%d/%y", errors="coerce")
+
+    # Drop rows with invalid data
+    df = df.dropna(subset=["Date", "Amount"])
+
+    # Create Month column from Date
+    df["Month"] = df["Date"].dt.strftime("%B")
 
     return df
 
@@ -36,12 +42,9 @@ if st.sidebar.button("🔄 Refresh Data"):
 df = load_data()
 
 # -----------------------------
-# Month ordering
+# Month ordering (automatic & correct)
 # -----------------------------
-MONTH_ORDER = [
-    "January","February","March","April","May","June",
-    "July","August","September","October","November","December"
-]
+MONTH_ORDER = list(pd.date_range("2026-01-01", periods=12, freq="MS").strftime("%B"))
 
 df["Month"] = pd.Categorical(df["Month"], categories=MONTH_ORDER, ordered=True)
 
@@ -80,7 +83,7 @@ include_income = st.sidebar.toggle("Include Income in Charts", value=False)
 df_filtered = df[df["Month"].isin(selected_months)]
 
 # -----------------------------
-# Exclusion rules
+# Exclusion rules (charts only)
 # -----------------------------
 EXCLUDE_KEYWORDS = [
     "total",
@@ -156,10 +159,8 @@ variance_df = (
     .fillna(0)
 )
 
-# Ensure columns exist to prevent KeyError
 variance_df["Actual"] = variance_df.get("Actual", 0)
 variance_df["Expected"] = variance_df.get("Expected", 0)
-
 variance_df["Variance"] = variance_df["Actual"] - variance_df["Expected"]
 variance_df = variance_df.reset_index()
 
@@ -179,7 +180,6 @@ st.plotly_chart(fig_variance, use_container_width=True)
 # -----------------------------
 st.subheader("🏆 Top 10 Spending Categories")
 
-# Exclude mortgage ONLY here
 df_top10_base = df_spending[
     ~df_spending["Category"].str.lower().str.contains("mortgage", na=False)
 ]
@@ -248,9 +248,7 @@ col2.metric("Expected Spending", f"${expected_total:,.0f}")
 col3.metric("Over / Under", f"${variance_total:,.0f}")
 
 # -----------------------------
-# Raw Data
+# Raw Data (always shows everything loaded)
 # -----------------------------
 with st.expander("Show Raw Data"):
-    st.dataframe(df_filtered, use_container_width=True)
-
-
+    st.dataframe(df, use_container_width=True)
