@@ -114,9 +114,9 @@ net_variance = income_actual - actual_expenses
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Expected Expenses", f"${expected_expenses:,.0f}")
 col2.metric("Actual Expenses", f"${actual_expenses:,.0f}")
-col3.metric("Variance", f"${variance_expenses:,.0f}")
+col3.metric("Expenses PvA", f"${variance_expenses:,.0f}")
 col4.metric("Income Actual", f"${income_actual:,.0f}")
-col5.metric("Net Variance", f"${net_variance:,.0f}")
+col5.metric("Savings Actual", f"${net_variance:,.0f}")
 
 # -----------------------------
 # EXPECTED VS ACTUAL BY CATEGORY (EXPENSES ONLY)
@@ -243,3 +243,4 @@ with st.expander("Show Raw Data"):
         df_filtered.sort_values(["Date", "Title"], ascending=[False, True]),
         width="stretch"
     )
+
