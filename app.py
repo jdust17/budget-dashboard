@@ -11,7 +11,7 @@ st.title("💰 Personal Finance Dashboard")
 # -----------------------------
 # Google Sheets URLs
 # -----------------------------
-SUMMARY_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pub?gid=1013390825&single=true&output=csv"
+SUMMARY_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pubhtml?gid=1013390825&single=true"
 MAPPING_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pubhtml?gid=1543886282&single=true"
 
 # -----------------------------
@@ -254,4 +254,5 @@ col3.metric("Over / Under", f"${variance_total:,.0f}")
 # -----------------------------
 with st.expander("Show Raw Data"):
     st.dataframe(df_filtered, width="stretch")
+
 
