@@ -11,7 +11,7 @@ st.title("💰 Personal Finance Dashboard")
 # -----------------------------
 # Google Sheets URLs
 # -----------------------------
-TRANSACTIONS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pub?gid=1013390825&single=true&output=csv"
+SUMMARY_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pub?gid=1013390825&single=true&output=csv"
 MAPPING_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pubhtml?gid=1543886282&single=true"
 
 # -----------------------------
@@ -20,7 +20,7 @@ MAPPING_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7n
 @st.cache_data(ttl=60)
 def load_data():
     # Load transactions
-    df = pd.read_csv(TRANSACTIONS_URL)
+    df = pd.read_csv(SUMMARY_URL)
 
     # Load mapping
     mapping = pd.read_csv(MAPPING_URL)
@@ -254,3 +254,4 @@ col3.metric("Over / Under", f"${variance_total:,.0f}")
 # -----------------------------
 with st.expander("Show Raw Data"):
     st.dataframe(df_filtered, width="stretch")
+
