@@ -29,7 +29,6 @@ def load_csv(url):
 def load_data():
     df = load_csv(SUMMARY_URL)
 
-    # Normalize column names
     df.columns = df.columns.str.strip()
 
     required_cols = ["Date", "Title", "Category", "Type", "Amount"]
@@ -41,22 +40,19 @@ def load_data():
 
     # Clean text
     df["Title"] = df["Title"].astype(str).str.strip()
-    df["Category"] = df["Category"].astype(str).str.strip().replace("", "Uncategorized")
+    df["Category"] = df["Category"].astype(str).str.strip().replace("", "Uncategorized remembering")
     df["Type"] = df["Type"].astype(str).str.strip()
 
-    # Clean amounts (keeps zeros)
+    # Clean amounts
     df["Amount"] = (
-        df["Amount"]
-        .astype(str)
+        df["Amount"].astype(str)
         .str.replace(",", "", regex=False)
         .str.replace("$", "", regex=False)
     )
     df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
 
-    # Parse dates safely
+    # Parse dates
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-
-    # Create Month column
     df["Month"] = df["Date"].dt.month_name()
 
     return df
@@ -91,26 +87,33 @@ selected_months = st.sidebar.multiselect(
 df_filtered = df[df["Month"].isin(selected_months)]
 
 # -----------------------------
-# KEY METRICS (ALWAYS INCLUDE ALL INCOME)
+# EXPENSE FILTER (USED EVERYWHERE)
+# -----------------------------
+EXCLUDED_CATEGORIES = ["Income", "Investment", "Investments", "Tithes"]
+
+expense_df = df_filtered[~df_filtered["Category"].isin(EXCLUDED_CATEGORIES)]
+
+# -----------------------------
+# KEY METRICS — EXPENSES ONLY
 # -----------------------------
 st.subheader("📊 Key Metrics")
 
-income_total = df_filtered[df_filtered["Category"] == "Income"]["Amount"].sum()
-expense_total = df_filtered[df_filtered["Category"] != "Income"]["Amount"].sum()
-net_total = income_total - expense_total
+expected_expenses = expense_df[expense_df["Type"] == "Expected"]["Amount"].sum()
+actual_expenses = expense_df[expense_df["Type"] == "Actual"]["Amount"].sum()
+variance_expenses = actual_expenses - expected_expenses
 
 col1, col2, col3 = st.columns(3)
-col1.metric("Total Income", f"${income_total:,.0f}")
-col2.metric("Total Expenses", f"${expense_total:,.0f}")
-col3.metric("Net", f"${net_total:,.0f}")
+col1.metric("Expected Expenses", f"${expected_expenses:,.0f}")
+col2.metric("Actual Expenses", f"${actual_expenses:,.0f}")
+col3.metric("Variance", f"${variance_expenses:,.0f}")
 
 # -----------------------------
-# EXPECTED VS ACTUAL BY CATEGORY
+# EXPECTED VS ACTUAL BY CATEGORY (EXPENSES ONLY)
 # -----------------------------
 st.subheader("📊 Expected vs Actual by Category")
 
 summary_df = (
-    df_filtered
+    expense_df
     .groupby(["Category", "Type"], as_index=False)["Amount"]
     .sum()
 )
@@ -127,15 +130,31 @@ fig_summary.update_layout(template="plotly_white")
 st.plotly_chart(fig_summary, width="stretch")
 
 # -----------------------------
+# NEW: CATEGORY ORDERED EXPENSE COMPARISON
+# -----------------------------
+st.subheader("📊 Expected vs Actual Expenses (Category Order)")
+
+category_order = df_filtered["Category"].drop_duplicates().tolist()
+
+fig_ordered = px.bar(
+    summary_df,
+    x="Category",
+    y="Amount",
+    color="Type",
+    barmode="group",
+    category_orders={"Category": category_order}
+)
+
+fig_ordered.update_layout(template="plotly_white")
+st.plotly_chart(fig_ordered, width="stretch")
+
+# -----------------------------
 # MONTHLY SPENDING TREND (ACTUAL ONLY)
 # -----------------------------
 st.subheader("📈 Monthly Spending Trend (Actual)")
 
 monthly_trend = (
-    df_filtered[
-        (df_filtered["Type"] == "Actual") &
-        (df_filtered["Category"] != "Income")
-    ]
+    expense_df[expense_df["Type"] == "Actual"]
     .groupby("Month", as_index=False)["Amount"]
     .sum()
     .sort_values("Month")
@@ -152,14 +171,14 @@ fig_trend.update_layout(template="plotly_white")
 st.plotly_chart(fig_trend, width="stretch")
 
 # -----------------------------
-# TOP 10 SPENDING (NO INCOME)
+# TOP 10 SPENDING (NO INCOME OR MORTGAGE)
 # -----------------------------
 st.subheader("🏆 Top 10 Spending Categories")
 
 top10 = (
-    df_filtered[
-        (df_filtered["Category"] != "Income") &
-        (df_filtered["Type"] == "Actual")
+    expense_df[
+        (expense_df["Type"] == "Actual") &
+        (~expense_df["Category"].str.contains("Mortgage", case=False, na=False))
     ]
     .groupby("Title", as_index=False)["Amount"]
     .sum()
@@ -182,7 +201,7 @@ fig_top10.update_layout(
 st.plotly_chart(fig_top10, width="stretch")
 
 # -----------------------------
-# OVER / UNDER BUDGET
+# OVER / UNDER BUDGET (EXPENSES ONLY)
 # -----------------------------
 st.subheader("💸 Over / Under Budget")
 
@@ -206,7 +225,10 @@ fig_variance.update_layout(template="plotly_white")
 st.plotly_chart(fig_variance, width="stretch")
 
 # -----------------------------
-# RAW DATA (NO ROWS DROPPED)
+# RAW DATA — SORTED
 # -----------------------------
 with st.expander("Show Raw Data"):
-    st.dataframe(df_filtered.sort_values("Date", ascending=False), width="stretch")
+    st.dataframe(
+        df_filtered.sort_values(["Date", "Title"], ascending=[False, True]),
+        width="stretch"
+    )
