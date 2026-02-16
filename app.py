@@ -102,17 +102,21 @@ expected_expenses = expense_df[expense_df["Type"] == "Expected"]["Amount"].sum()
 actual_expenses = expense_df[expense_df["Type"] == "Actual"]["Amount"].sum()
 variance_expenses = actual_expenses - expected_expenses
 
-# ✅ NEW: Income Actual
+# Income Actual
 income_actual = df_filtered[
     (df_filtered["Category"] == "Income") &
     (df_filtered["Type"] == "Actual")
 ]["Amount"].sum()
 
-col1, col2, col3, col4 = st.columns(4)
+# ✅ NEW: Net Variance (Income - Actual Expenses)
+net_variance = income_actual - actual_expenses
+
+col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Expected Expenses", f"${expected_expenses:,.0f}")
 col2.metric("Actual Expenses", f"${actual_expenses:,.0f}")
 col3.metric("Variance", f"${variance_expenses:,.0f}")
 col4.metric("Income Actual", f"${income_actual:,.0f}")
+col5.metric("Net Variance", f"${net_variance:,.0f}")
 
 # -----------------------------
 # EXPECTED VS ACTUAL BY CATEGORY (EXPENSES ONLY)
