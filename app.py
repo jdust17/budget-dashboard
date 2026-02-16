@@ -9,46 +9,52 @@ st.set_page_config(page_title="Personal Finance Dashboard", layout="wide")
 st.title("💰 Personal Finance Dashboard")
 
 # -----------------------------
-# Load data (Bulletproof Google Sheets)
+# Google Sheets URLs
 # -----------------------------
-@st.cache_data(ttl=60)  # refresh every 60 seconds
+TRANSACTIONS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pub?gid=1013390825&single=true&output=csv"
+MAPPING_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pubhtml?gid=1543886282&single=true"
+
+# -----------------------------
+# Load data with refresh
+# -----------------------------
+@st.cache_data(ttl=60)
 def load_data():
-    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pub?gid=1013390825&single=true&output=csv"
-    df = pd.read_csv(url)
+    # Load transactions
+    df = pd.read_csv(TRANSACTIONS_URL)
+
+    # Load mapping
+    mapping = pd.read_csv(MAPPING_URL)
 
     # Standardize column names
-    df.columns = ["Date", "Category", "Type", "Amount"]
+    df.columns = ["Date", "Title", "Type", "Amount"]
+    mapping.columns = ["Title", "Category"]
 
-    # Clean Amount
-    df["Amount"] = (
-        df["Amount"]
-        .astype(str)
-        .str.replace("$", "", regex=False)
-        .str.replace(",", "", regex=False)
-        .str.strip()
-    )
+    # Clean data
+    df["Title"] = df["Title"].astype(str).str.strip()
+    mapping["Title"] = mapping["Title"].astype(str).str.strip()
+
+    # Merge mapping
+    df = df.merge(mapping, on="Title", how="left")
+
+    # Fill missing categories
+    df["Category"] = df["Category"].fillna("Uncategorized")
+
+    # Convert Amount
     df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce")
+    df = df.dropna(subset=["Amount"])
 
-    # Robust date parsing (prevents missing rows)
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce", infer_datetime_format=True)
+    # Parse Date
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
 
-    # Retry parsing failed dates
-    mask = df["Date"].isna()
-    if mask.any():
-        df.loc[mask, "Date"] = pd.to_datetime(
-            df.loc[mask, "Date"], errors="coerce", dayfirst=False
-        )
+    # Drop rows with invalid dates
+    df = df.dropna(subset=["Date"])
 
     # Create Month column
-    df["Month"] = df["Date"].dt.strftime("%B")
-    df["Month"] = df["Month"].fillna("Unknown")
-
-    # Drop rows only if Amount missing
-    df = df.dropna(subset=["Amount"])
+    df["Month"] = df["Date"].dt.month_name()
 
     return df
 
-# Manual refresh button
+# Manual refresh
 if st.sidebar.button("🔄 Refresh Data"):
     st.cache_data.clear()
 
@@ -59,29 +65,10 @@ df = load_data()
 # -----------------------------
 MONTH_ORDER = [
     "January","February","March","April","May","June",
-    "July","August","September","October","November","December","Unknown"
+    "July","August","September","October","November","December"
 ]
 
 df["Month"] = pd.Categorical(df["Month"], categories=MONTH_ORDER, ordered=True)
-
-# -----------------------------
-# Category grouping
-# -----------------------------
-category_map = {
-    "income": ["Jacob Income", "Zoe Income", "Rental Home Income", "Bank Account Interest"],
-    "tithes": ["Tithing", "Newman Center", "St Ann's"],
-    "fixed": ["Mortgage", "Internet", "Spotify + YouTube", "Kof C Insurance"],
-    "needs": ["Utilities", "Groceries", "Car/Gas", "Water", "Trash"],
-    "wants": ["Eating Out", "Travel", "Gifts", "Date Night"]
-}
-
-def assign_category_group(category):
-    for group, categories in category_map.items():
-        if category in categories:
-            return group
-    return "other"
-
-df["category_group"] = df["Category"].apply(assign_category_group)
 
 # -----------------------------
 # Sidebar filters
@@ -99,34 +86,19 @@ include_income = st.sidebar.toggle("Include Income in Charts", value=False)
 df_filtered = df[df["Month"].isin(selected_months)]
 
 # -----------------------------
-# Data Quality Checks
-# -----------------------------
-with st.expander("⚠️ Data Quality Warnings"):
-    missing_dates = df[df["Month"] == "Unknown"]
-    if not missing_dates.empty:
-        st.warning(f"{len(missing_dates)} rows have invalid or missing dates.")
-        st.dataframe(missing_dates)
-    else:
-        st.success("No date issues detected.")
-
-    st.write("Total rows loaded:", len(df))
-    st.write("Rows after filters:", len(df_filtered))
-
-# -----------------------------
-# Exclusion rules
+# Exclusions for spending charts
 # -----------------------------
 EXCLUDE_KEYWORDS = [
     "total",
     "non-investment",
     "jacob income",
     "zoe income",
-    "rental",
     "interest"
 ]
 
 def exclude_rows(df):
     return df[
-        ~df["Category"].str.lower().str.contains("|".join(EXCLUDE_KEYWORDS), na=False)
+        ~df["Title"].str.lower().str.contains("|".join(EXCLUDE_KEYWORDS), na=False)
     ]
 
 df_spending = exclude_rows(df_filtered)
@@ -139,20 +111,21 @@ if include_income:
 # -----------------------------
 summary_df = (
     df_spending
-    .groupby(["category_group", "Type"], as_index=False)["Amount"]
+    .groupby(["Category", "Type"], as_index=False)["Amount"]
     .sum()
 )
 
 fig_summary = px.bar(
     summary_df,
-    x="category_group",
+    x="Category",
     y="Amount",
     color="Type",
     barmode="group",
-    title="Expected vs Actual by Category Group"
+    title="Expected vs Actual by Category"
 )
+
 fig_summary.update_layout(template="plotly_white")
-st.plotly_chart(fig_summary, use_container_width=True)
+st.plotly_chart(fig_summary, width="stretch")
 
 # -----------------------------
 # Monthly Spending Trend
@@ -173,8 +146,9 @@ fig_trend = px.line(
     markers=True,
     title="Total Actual Spending by Month"
 )
+
 fig_trend.update_layout(template="plotly_white")
-st.plotly_chart(fig_trend, use_container_width=True)
+st.plotly_chart(fig_trend, width="stretch")
 
 # -----------------------------
 # Over / Under Budget
@@ -183,7 +157,7 @@ st.subheader("💸 Over / Under Budget")
 
 variance_df = (
     summary_df
-    .pivot(index="category_group", columns="Type", values="Amount")
+    .pivot(index="Category", columns="Type", values="Amount")
     .fillna(0)
 )
 
@@ -194,16 +168,17 @@ variance_df = variance_df.reset_index()
 
 fig_variance = px.bar(
     variance_df,
-    x="category_group",
+    x="Category",
     y="Variance",
     color="Variance",
     title="Over / Under Budget"
 )
+
 fig_variance.update_layout(template="plotly_white")
-st.plotly_chart(fig_variance, use_container_width=True)
+st.plotly_chart(fig_variance, width="stretch")
 
 # -----------------------------
-# Top 10 Spending Categories (Mortgage excluded)
+# Top 10 Spending Categories
 # -----------------------------
 st.subheader("🏆 Top 10 Spending Categories")
 
@@ -213,7 +188,7 @@ df_top10_base = df_spending[
 
 top10 = (
     df_top10_base[df_top10_base["Type"] == "Actual"]
-    .groupby("Category", as_index=False)["Amount"]
+    .groupby("Title", as_index=False)["Amount"]
     .sum()
     .sort_values("Amount", ascending=False)
     .head(10)
@@ -222,41 +197,43 @@ top10 = (
 fig_top10 = px.bar(
     top10,
     x="Amount",
-    y="Category",
+    y="Title",
     orientation="h",
     title="Top 10 Spending Categories"
 )
+
 fig_top10.update_layout(template="plotly_white", yaxis=dict(autorange="reversed"))
-st.plotly_chart(fig_top10, use_container_width=True)
+st.plotly_chart(fig_top10, width="stretch")
 
 # -----------------------------
 # Monthly Trend for Top 10
 # -----------------------------
 st.subheader("📊 Monthly Trend — Top 10 Categories")
 
-top10_categories = top10["Category"].tolist()
+top10_titles = top10["Title"].tolist()
 
 monthly_top10 = (
     df_top10_base[
         (df_top10_base["Type"] == "Actual") &
-        (df_top10_base["Category"].isin(top10_categories))
+        (df_top10_base["Title"].isin(top10_titles))
     ]
-    .groupby(["Month", "Category"], as_index=False)["Amount"]
+    .groupby(["Month", "Title"], as_index=False)["Amount"]
     .sum()
-    .sort_values(["Category", "Month"])
+    .sort_values(["Title", "Month"])
 )
 
 fig_monthly_top10 = px.bar(
     monthly_top10,
     x="Month",
     y="Amount",
-    color="Category",
-    facet_col="Category",
+    color="Title",
+    facet_col="Title",
     facet_col_wrap=2,
     title="Monthly Spending for Top Categories"
 )
+
 fig_monthly_top10.update_layout(template="plotly_white", height=1000)
-st.plotly_chart(fig_monthly_top10, use_container_width=True)
+st.plotly_chart(fig_monthly_top10, width="stretch")
 
 # -----------------------------
 # Key Metrics
@@ -276,4 +253,4 @@ col3.metric("Over / Under", f"${variance_total:,.0f}")
 # Raw Data
 # -----------------------------
 with st.expander("Show Raw Data"):
-    st.dataframe(df_filtered, use_container_width=True)
+    st.dataframe(df_filtered, width="stretch")
