@@ -9,118 +9,52 @@ st.set_page_config(page_title="Personal Finance Dashboard", layout="wide")
 st.title("💰 Personal Finance Dashboard")
 
 # -----------------------------
-# Google Sheets URLs (your links)
+# Google Sheets URLs
 # -----------------------------
 SUMMARY_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pub?gid=1013390825&single=true&output=csv"
+MAPPING_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pub?gid=1543886282&single=true&output=csv"
 
 # -----------------------------
-# Hard-coded category mapping
+# Safe CSV loader
 # -----------------------------
-CATEGORY_MAP = {
-    # Income
-    "Jacob Income": "Income",
-    "Zoe Income": "Income",
-
-    # Giving
-    "Tithe": "Tithes",
-
-    # Mortgage & Housing
-    "Mortgage Payment": "Mortgage",
-    "Property Tax": "Housing",
-    "Home Maintenance": "Housing",
-
-    # Long Term
-    "Savings Transfer": "Long Term",
-    "Investment Transfer": "Long Term",
-
-    # Household
-    "Household Supplies": "Household",
-    "Cleaning Supplies": "Household",
-
-    # Subscriptions
-    "Netflix": "Subscription",
-    "Spotify": "Subscription",
-    "Amazon Prime": "Subscription",
-
-    # Insurance
-    "Car Insurance": "Insurance",
-    "Home Insurance": "Insurance",
-    "Health Insurance": "Insurance",
-
-    # Utilities
-    "Electric": "Utilities",
-    "Water": "Utilities",
-    "Internet": "Utilities",
-    "Trash": "Utilities",
-
-    # Transportation
-    "Gas": "Transportation",
-    "Car Maintenance": "Transportation",
-
-    # Food
-    "Groceries": "Food",
-    "Dining Out": "Food",
-    "Restaurants": "Food",
-
-    # Housing
-    "HOA": "Housing",
-
-    # Kids
-    "Daycare": "Kids",
-    "School Supplies": "Kids",
-    "Kids Activities": "Kids",
-}
+def safe_read_csv(url):
+    try:
+        return pd.read_csv(url, engine="python")
+    except Exception:
+        return pd.read_csv(url, engine="python", on_bad_lines="skip")
 
 # -----------------------------
-# Load data (Hardened)
+# Load data
 # -----------------------------
 @st.cache_data(ttl=60)
 def load_data():
-    # Load summary data safely
-    df = pd.read_csv(
-        SUMMARY_URL,
-        engine="python",
-        on_bad_lines="skip"
-    )
+    df = safe_read_csv(SUMMARY_URL)
+    mapping = safe_read_csv(MAPPING_URL)
 
-    # Clean column names
+    # Standardize headers
     df.columns = [c.strip() for c in df.columns]
+    mapping.columns = [c.strip() for c in mapping.columns]
 
-    # Auto-detect column names
-    column_map = {}
-    for col in df.columns:
-        lc = col.lower()
-        if "date" in lc:
-            column_map[col] = "Date"
-        elif "title" in lc or "description" in lc:
-            column_map[col] = "Title"
-        elif "type" in lc:
-            column_map[col] = "Type"
-        elif "amount" in lc:
-            column_map[col] = "Amount"
-
-    df = df.rename(columns=column_map)
-
-    # Ensure required columns exist
-    required_cols = ["Date", "Title", "Type", "Amount"]
-    missing = [c for c in required_cols if c not in df.columns]
-    if missing:
-        st.error(f"Missing required columns: {missing}")
+    required_cols = {"Date", "Title", "Type", "Amount"}
+    if not required_cols.issubset(df.columns):
+        st.error(f"Missing required columns: {required_cols - set(df.columns)}")
         st.stop()
 
-    # Clean data
+    # Clean text
     df["Title"] = df["Title"].astype(str).str.strip()
-    df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce")
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    mapping["Title"] = mapping["Title"].astype(str).str.strip()
 
-    # Drop bad rows
-    df = df.dropna(subset=["Amount", "Date"])
-
-    # Apply category mapping
-    df["Category"] = df["Title"].map(CATEGORY_MAP)
+    # Merge mapping
+    df = df.merge(mapping, on="Title", how="left")
     df["Category"] = df["Category"].fillna("Uncategorized")
 
-    # Month column
+    # Convert types
+    df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce")
+    df = df.dropna(subset=["Amount"])
+
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["Date"])
+
     df["Month"] = df["Date"].dt.month_name()
 
     return df
@@ -157,23 +91,25 @@ include_income = st.sidebar.toggle("Include Income in Charts", value=False)
 df_filtered = df[df["Month"].isin(selected_months)]
 
 # -----------------------------
-# Exclusions for spending charts
+# Income detection helper
 # -----------------------------
-EXCLUDE_KEYWORDS = [
-    "total",
-    "non-investment",
-    "interest"
-]
+def is_income(row):
+    title = str(row["Title"]).lower()
+    category = str(row["Category"]).lower()
+    return (
+        category == "income"
+        or "income" in title
+        or "payroll" in title
+        or "salary" in title
+    )
 
-def exclude_rows(df):
-    return df[
-        ~df["Title"].str.lower().str.contains("|".join(EXCLUDE_KEYWORDS), na=False)
-    ]
-
-df_spending = exclude_rows(df_filtered)
-
+# -----------------------------
+# Spending dataset (charts only)
+# -----------------------------
 if include_income:
-    df_spending = df_filtered
+    df_spending = df_filtered.copy()
+else:
+    df_spending = df_filtered[~df_filtered.apply(is_income, axis=1)]
 
 # -----------------------------
 # SUMMARY CHART
@@ -193,7 +129,6 @@ fig_summary = px.bar(
     title="Expected vs Actual by Category"
 )
 
-fig_summary.update_layout(template="plotly_white")
 st.plotly_chart(fig_summary, width="stretch")
 
 # -----------------------------
@@ -208,15 +143,7 @@ monthly_trend = (
     .sort_values("Month")
 )
 
-fig_trend = px.line(
-    monthly_trend,
-    x="Month",
-    y="Amount",
-    markers=True,
-    title="Total Actual Spending by Month"
-)
-
-fig_trend.update_layout(template="plotly_white")
+fig_trend = px.line(monthly_trend, x="Month", y="Amount", markers=True)
 st.plotly_chart(fig_trend, width="stretch")
 
 # -----------------------------
@@ -235,82 +162,38 @@ variance_df["Expected"] = variance_df.get("Expected", 0)
 variance_df["Variance"] = variance_df["Actual"] - variance_df["Expected"]
 variance_df = variance_df.reset_index()
 
-fig_variance = px.bar(
-    variance_df,
-    x="Category",
-    y="Variance",
-    color="Variance",
-    title="Over / Under Budget"
-)
-
-fig_variance.update_layout(template="plotly_white")
+fig_variance = px.bar(variance_df, x="Category", y="Variance", color="Variance")
 st.plotly_chart(fig_variance, width="stretch")
 
 # -----------------------------
-# Top 10 Spending Categories
+# Top 10 Spending Categories (NO INCOME)
 # -----------------------------
 st.subheader("🏆 Top 10 Spending Categories")
 
-df_top10_base = df_spending[
-    ~df_spending["Category"].str.lower().str.contains("mortgage", na=False)
+top10_base = df_filtered[
+    (~df_filtered.apply(is_income, axis=1)) &
+    (df_filtered["Type"] == "Actual")
 ]
 
 top10 = (
-    df_top10_base[df_top10_base["Type"] == "Actual"]
+    top10_base
     .groupby("Title", as_index=False)["Amount"]
     .sum()
     .sort_values("Amount", ascending=False)
     .head(10)
 )
 
-fig_top10 = px.bar(
-    top10,
-    x="Amount",
-    y="Title",
-    orientation="h",
-    title="Top 10 Spending Categories"
-)
-
-fig_top10.update_layout(template="plotly_white", yaxis=dict(autorange="reversed"))
+fig_top10 = px.bar(top10, x="Amount", y="Title", orientation="h")
+fig_top10.update_layout(yaxis=dict(autorange="reversed"))
 st.plotly_chart(fig_top10, width="stretch")
 
 # -----------------------------
-# Monthly Trend for Top 10
-# -----------------------------
-st.subheader("📊 Monthly Trend — Top 10 Categories")
-
-top10_titles = top10["Title"].tolist()
-
-monthly_top10 = (
-    df_top10_base[
-        (df_top10_base["Type"] == "Actual") &
-        (df_top10_base["Title"].isin(top10_titles))
-    ]
-    .groupby(["Month", "Title"], as_index=False)["Amount"]
-    .sum()
-    .sort_values(["Title", "Month"])
-)
-
-fig_monthly_top10 = px.bar(
-    monthly_top10,
-    x="Month",
-    y="Amount",
-    color="Title",
-    facet_col="Title",
-    facet_col_wrap=2,
-    title="Monthly Spending for Top Categories"
-)
-
-fig_monthly_top10.update_layout(template="plotly_white", height=1000)
-st.plotly_chart(fig_monthly_top10, width="stretch")
-
-# -----------------------------
-# Key Metrics
+# Key Metrics (NEVER EXCLUDE INCOME)
 # -----------------------------
 st.subheader("📊 Key Metrics")
 
-actual_total = df_spending[df_spending["Type"] == "Actual"]["Amount"].sum()
-expected_total = df_spending[df_spending["Type"] == "Expected"]["Amount"].sum()
+actual_total = df_filtered[df_filtered["Type"] == "Actual"]["Amount"].sum()
+expected_total = df_filtered[df_filtered["Type"] == "Expected"]["Amount"].sum()
 variance_total = actual_total - expected_total
 
 col1, col2, col3 = st.columns(3)
