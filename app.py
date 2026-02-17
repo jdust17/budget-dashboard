@@ -89,7 +89,8 @@ df_filtered = df[df["Month"].isin(selected_months)]
 # -----------------------------
 # EXPENSE FILTER (USED EVERYWHERE)
 # -----------------------------
-EXCLUDED_CATEGORIES = ["Income", "Investment", "Investments", "Tithes"]
+# 🔧 Tithes removed from exclusion so they count in expenses
+EXCLUDED_CATEGORIES = ["Income", "Investment", "Investments"]
 
 expense_df = df_filtered[~df_filtered["Category"].isin(EXCLUDED_CATEGORIES)]
 
@@ -108,7 +109,7 @@ income_actual = df_filtered[
     (df_filtered["Type"] == "Actual")
 ]["Amount"].sum()
 
-# ✅ NEW: Net Variance (Income - Actual Expenses)
+# Net variance
 net_variance = income_actual - actual_expenses
 
 col1, col2, col3, col4, col5 = st.columns(5)
@@ -123,8 +124,11 @@ col5.metric("Savings Actual", f"${net_variance:,.0f}")
 # -----------------------------
 st.subheader("📊 Expected vs Actual by Category")
 
+# 🔧 Remove Mortgage only for this chart
+chart_df = expense_df[~expense_df["Category"].str.contains("Mortgage", case=False, na=False)]
+
 summary_df = (
-    expense_df
+    chart_df
     .groupby(["Category", "Type"], as_index=False)["Amount"]
     .sum()
 )
@@ -139,25 +143,6 @@ fig_summary = px.bar(
 
 fig_summary.update_layout(template="plotly_white")
 st.plotly_chart(fig_summary, width="stretch")
-
-# -----------------------------
-# NEW: CATEGORY ORDERED EXPENSE COMPARISON
-# -----------------------------
-st.subheader("📊 Expected vs Actual Expenses (Category Order)")
-
-category_order = df_filtered["Category"].drop_duplicates().tolist()
-
-fig_ordered = px.bar(
-    summary_df,
-    x="Category",
-    y="Amount",
-    color="Type",
-    barmode="group",
-    category_orders={"Category": category_order}
-)
-
-fig_ordered.update_layout(template="plotly_white")
-st.plotly_chart(fig_ordered, width="stretch")
 
 # -----------------------------
 # MONTHLY SPENDING TREND (ACTUAL ONLY)
@@ -243,4 +228,3 @@ with st.expander("Show Raw Data"):
         df_filtered.sort_values(["Date", "Title"], ascending=[False, True]),
         width="stretch"
     )
-
