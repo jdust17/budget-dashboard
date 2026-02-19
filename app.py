@@ -342,15 +342,28 @@ def build_insight_payload(df_filtered_local: pd.DataFrame, expense_df_local: pd.
     return payload
 
 @st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def generate_ai_insights_cached(period_key: str, payload: dict) -> dict:
     """
     Cache AI output by period_key for 1 hour to avoid repeated calls.
+    Never crashes the app if auth/billing/model access fails.
     """
-    from openai import OpenAI
-    client = OpenAI(api_key=st.secrets.get("OPENAI_API_KEY", None))
+    try:
+        from openai import OpenAI
+        from openai import AuthenticationError, PermissionDeniedError, RateLimitError, APIConnectionError, APIStatusError
+    except Exception as e:
+        return {"error": f"Missing dependency: openai. Add `openai` to requirements.txt. Details: {e}"}
 
-    if not client.api_key:
-        return {"error": "Missing OPENAI_API_KEY in Streamlit secrets."}
+    api_key = None
+    try:
+        api_key = st.secrets.get("OPENAI_API_KEY", None)
+    except Exception:
+        api_key = None
+
+    if not api_key or not str(api_key).strip():
+        return {"error": "Missing OPENAI_API_KEY. Add it in Streamlit Cloud → Settings → Secrets."}
+
+    client = OpenAI(api_key=str(api_key).strip())
 
     system_msg = (
         "You are a helpful personal finance analyst. "
@@ -374,47 +387,29 @@ Rules:
 - Tone: friendly, practical, plain English.
 """
 
-    # Cheap + good default
     model_name = "gpt-4.1-mini"
 
-    resp = client.chat.completions.create(
-        model=model_name,
-        messages=[
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
-        ],
-        temperature=0.3,
-    )
+    try:
+        resp = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.3,
+        )
+        text = resp.choices[0].message.content.strip()
+        return {"text": text, "model": model_name}
 
-    text = resp.choices[0].message.content.strip()
-    return {"text": text, "model": model_name}
-
-# UI controls
-with st.expander("How this works", expanded=False):
-    st.write(
-        "This section is hybrid: the app computes the facts locally (totals, deltas, top drivers), "
-        "then AI turns those facts into plain-English insights. No raw transactions are sent."
-    )
-
-payload = build_insight_payload(df_filtered, expense_df)
-
-# Show a quick local, non-AI fallback (always available)
-st.markdown("**Quick Stats (local):**")
-col_a, col_b, col_c, col_d = st.columns(4)
-col_a.metric("Expected (Expenses)", f"${payload['totals']['expected_expenses']:,.0f}")
-col_b.metric("Actual (Expenses)", f"${payload['totals']['actual_expenses']:,.0f}")
-col_c.metric("Income (Actual)", f"${payload['totals']['income_actual']:,.0f}")
-col_d.metric("Savings (Actual)", f"${payload['totals']['savings_actual']:,.0f}")
-
-# AI button
-if st.button("✨ Generate insights with AI", type="primary"):
-    with st.spinner("Generating insights..."):
-        result = generate_ai_insights_cached(period_key=period_key, payload=payload)
-
-    if "error" in result:
-        st.error(result["error"])
-    else:
-        st.markdown(result["text"])
-        st.caption(f"Model: {result.get('model', 'unknown')} | Cached per selected months for ~1 hour")
-else:
-    st.info("Click **Generate insights with AI** to create personalized insights for the selected period.")
+    except AuthenticationError:
+        return {"error": "OpenAI authentication failed. Re-check OPENAI_API_KEY in Streamlit secrets (valid key, no extra spaces)."}
+    except PermissionDeniedError:
+        return {"error": f"Permission denied for model `{model_name}`. Your key may not have access to this model."}
+    except RateLimitError:
+        return {"error": "Rate limited. Try again in a minute."}
+    except APIConnectionError:
+        return {"error": "Network/API connection issue. Try again."}
+    except APIStatusError as e:
+        return {"error": f"OpenAI API error: {e.status_code}. Try again or check billing/access."}
+    except Exception as e:
+        return {"error": f"Unexpected OpenAI error: {e}"}
