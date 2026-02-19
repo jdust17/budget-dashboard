@@ -228,3 +228,193 @@ with st.expander("Show Raw Data"):
         df_filtered.sort_values(["Date", "Title"], ascending=[False, True]),
         width="stretch"
     )
+
+# -----------------------------
+# INSIGHTS (HYBRID: CODE FACTS + AI NARRATIVE)
+# -----------------------------
+st.divider()
+st.subheader("🧠 Insights & Recommendations")
+
+# Build a stable "period key" for caching (based on selected months)
+period_key = ",".join(selected_months)
+
+def _safe_float(x):
+    try:
+        return float(x)
+    except:
+        return 0.0
+
+def build_insight_payload(df_filtered_local: pd.DataFrame, expense_df_local: pd.DataFrame) -> dict:
+    """
+    Compute a compact, privacy-safe summary of the selected period.
+    No raw transaction dumps; only aggregated facts.
+    """
+    # Totals
+    expected_exp = expense_df_local[expense_df_local["Type"] == "Expected"]["Amount"].sum()
+    actual_exp = expense_df_local[expense_df_local["Type"] == "Actual"]["Amount"].sum()
+
+    income_actual_local = df_filtered_local[
+        (df_filtered_local["Category"] == "Income") &
+        (df_filtered_local["Type"] == "Actual")
+    ]["Amount"].sum()
+
+    savings_actual = income_actual_local - actual_exp
+
+    # Top drivers (Actual) - by Category
+    by_cat_actual = (
+        expense_df_local[expense_df_local["Type"] == "Actual"]
+        .groupby("Category", as_index=False)["Amount"]
+        .sum()
+        .sort_values("Amount", ascending=False)
+    )
+
+    top_categories = by_cat_actual.head(5).to_dict(orient="records")
+
+    # Biggest over/under vs Expected by Category (Actual - Expected)
+    by_cat_pivot = (
+        expense_df_local
+        .groupby(["Category", "Type"], as_index=False)["Amount"]
+        .sum()
+        .pivot(index="Category", columns="Type", values="Amount")
+        .fillna(0)
+    )
+    by_cat_pivot["delta"] = by_cat_pivot.get("Actual", 0) - by_cat_pivot.get("Expected", 0)
+    over_sorted = by_cat_pivot.sort_values("delta", ascending=False).reset_index()
+    under_sorted = by_cat_pivot.sort_values("delta", ascending=True).reset_index()
+
+    biggest_over = None
+    biggest_under = None
+    if len(over_sorted) > 0:
+        biggest_over = {
+            "Category": str(over_sorted.loc[0, "Category"]),
+            "delta": _safe_float(over_sorted.loc[0, "delta"]),
+            "Actual": _safe_float(over_sorted.loc[0, "Actual"]) if "Actual" in over_sorted.columns else 0,
+            "Expected": _safe_float(over_sorted.loc[0, "Expected"]) if "Expected" in over_sorted.columns else 0,
+        }
+    if len(under_sorted) > 0:
+        biggest_under = {
+            "Category": str(under_sorted.loc[0, "Category"]),
+            "delta": _safe_float(under_sorted.loc[0, "delta"]),
+            "Actual": _safe_float(under_sorted.loc[0, "Actual"]) if "Actual" in under_sorted.columns else 0,
+            "Expected": _safe_float(under_sorted.loc[0, "Expected"]) if "Expected" in under_sorted.columns else 0,
+        }
+
+    # Month-over-month: compare last two months in the selected range (Actual expenses)
+    mom = None
+    if expense_df_local["Month"].notna().any():
+        monthly_actual = (
+            expense_df_local[expense_df_local["Type"] == "Actual"]
+            .groupby("Month", as_index=False)["Amount"]
+            .sum()
+        )
+        # Ensure calendar order
+        monthly_actual["Month"] = pd.Categorical(monthly_actual["Month"], categories=MONTH_ORDER, ordered=True)
+        monthly_actual = monthly_actual.sort_values("Month")
+
+        if len(monthly_actual) >= 2:
+            last_two = monthly_actual.tail(2).reset_index(drop=True)
+            mom = {
+                "prev_month": str(last_two.loc[0, "Month"]),
+                "prev_amount": _safe_float(last_two.loc[0, "Amount"]),
+                "last_month": str(last_two.loc[1, "Month"]),
+                "last_amount": _safe_float(last_two.loc[1, "Amount"]),
+                "change": _safe_float(last_two.loc[1, "Amount"]) - _safe_float(last_two.loc[0, "Amount"]),
+            }
+
+    payload = {
+        "period_months": selected_months,
+        "totals": {
+            "expected_expenses": _safe_float(expected_exp),
+            "actual_expenses": _safe_float(actual_exp),
+            "income_actual": _safe_float(income_actual_local),
+            "savings_actual": _safe_float(savings_actual),
+            "variance_expenses": _safe_float(actual_exp - expected_exp),
+        },
+        "top_categories_actual": top_categories,
+        "biggest_over_budget": biggest_over,
+        "biggest_under_budget": biggest_under,
+        "month_over_month": mom,
+        "notes": [
+            "Insights should be based only on provided aggregates.",
+            "Do not invent numbers. If something is missing, say so.",
+        ],
+    }
+    return payload
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def generate_ai_insights_cached(period_key: str, payload: dict) -> dict:
+    """
+    Cache AI output by period_key for 1 hour to avoid repeated calls.
+    """
+    from openai import OpenAI
+    client = OpenAI(api_key=st.secrets.get("OPENAI_API_KEY", None))
+
+    if not client.api_key:
+        return {"error": "Missing OPENAI_API_KEY in Streamlit secrets."}
+
+    system_msg = (
+        "You are a helpful personal finance analyst. "
+        "Use ONLY the numbers in the provided JSON payload. "
+        "Write 2-3 insights and 1-2 concrete recommendations. "
+        "Be concise, specific, and do not mention the JSON or internal fields."
+    )
+
+    user_msg = f"""
+Here is an aggregated summary of spending for a selected period (JSON):
+
+{payload}
+
+Write:
+- Insights (2-3 bullet points)
+- Recommendations (1-2 bullet points)
+
+Rules:
+- Do NOT hallucinate or add numbers not present.
+- If month-over-month data is missing, skip MoM commentary.
+- Tone: friendly, practical, plain English.
+"""
+
+    # Cheap + good default
+    model_name = "gpt-4.1-mini"
+
+    resp = client.chat.completions.create(
+        model=model_name,
+        messages=[
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ],
+        temperature=0.3,
+    )
+
+    text = resp.choices[0].message.content.strip()
+    return {"text": text, "model": model_name}
+
+# UI controls
+with st.expander("How this works", expanded=False):
+    st.write(
+        "This section is hybrid: the app computes the facts locally (totals, deltas, top drivers), "
+        "then AI turns those facts into plain-English insights. No raw transactions are sent."
+    )
+
+payload = build_insight_payload(df_filtered, expense_df)
+
+# Show a quick local, non-AI fallback (always available)
+st.markdown("**Quick Stats (local):**")
+col_a, col_b, col_c, col_d = st.columns(4)
+col_a.metric("Expected (Expenses)", f"${payload['totals']['expected_expenses']:,.0f}")
+col_b.metric("Actual (Expenses)", f"${payload['totals']['actual_expenses']:,.0f}")
+col_c.metric("Income (Actual)", f"${payload['totals']['income_actual']:,.0f}")
+col_d.metric("Savings (Actual)", f"${payload['totals']['savings_actual']:,.0f}")
+
+# AI button
+if st.button("✨ Generate insights with AI", type="primary"):
+    with st.spinner("Generating insights..."):
+        result = generate_ai_insights_cached(period_key=period_key, payload=payload)
+
+    if "error" in result:
+        st.error(result["error"])
+    else:
+        st.markdown(result["text"])
+        st.caption(f"Model: {result.get('model', 'unknown')} | Cached per selected months for ~1 hour")
+else:
+    st.info("Click **Generate insights with AI** to create personalized insights for the selected period.")
