@@ -435,10 +435,37 @@ col_b.metric("Actual (Expenses)", f"${payload['totals']['actual_expenses']:,.0f}
 col_c.metric("Income (Actual)", f"${payload['totals']['income_actual']:,.0f}")
 col_d.metric("Savings (Actual)", f"${payload['totals']['savings_actual']:,.0f}")
 
-# AI button
-if st.button("✨ Generate insights with AI", type="primary"):
+# -----------------------------
+# COOLDOWN PATCH (REPLACES ONLY THE BUTTON BLOCK)
+# -----------------------------
+import time
+
+# Simple cooldown to prevent rapid re-clicks / reruns from spamming API
+if "ai_last_run_ts" not in st.session_state:
+    st.session_state.ai_last_run_ts = 0.0
+
+COOLDOWN_SECONDS = 30  # adjust as you like (30–120s is common)
+
+can_run = (time.time() - st.session_state.ai_last_run_ts) > COOLDOWN_SECONDS
+
+if st.button("✨ Generate insights with AI", type="primary", disabled=not can_run):
+    st.session_state.ai_last_run_ts = time.time()
+
     with st.spinner("Generating insights..."):
-        result = generate_ai_insights_cached(period_key=period_key, payload=payload)
+        # Retry loop for rate limits
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            result = generate_ai_insights_cached(period_key=period_key, payload=payload)
+
+            # If rate limited, backoff and retry
+            if isinstance(result, dict) and "error" in result and "Rate limited" in result["error"]:
+                if attempt < max_attempts:
+                    wait_s = 2 ** attempt  # 2s, 4s, 8s
+                    st.warning(f"Rate limited — retrying in {wait_s}s (attempt {attempt}/{max_attempts})...")
+                    time.sleep(wait_s)
+                    continue
+
+            break
 
     if "error" in result:
         st.error(result["error"])
@@ -446,4 +473,8 @@ if st.button("✨ Generate insights with AI", type="primary"):
         st.markdown(result["text"])
         st.caption(f"Model: {result.get('model', 'unknown')} | Cached per selected months for ~1 hour")
 else:
-    st.info("Click **Generate insights with AI** to create personalized insights for the selected period.")
+    if not can_run:
+        remaining = int(COOLDOWN_SECONDS - (time.time() - st.session_state.ai_last_run_ts))
+        st.info(f"Please wait {remaining}s before generating again.")
+    else:
+        st.info("Click **Generate insights with AI** to create personalized insights for the selected period.")
