@@ -341,7 +341,9 @@ def build_insight_payload(df_filtered_local: pd.DataFrame, expense_df_local: pd.
     }
     return payload
 
-@st.cache_data(ttl=3600, show_spinner=False)
+# -----------------------------
+# "DON'T CRASH" PATCH (ONLY CHANGES THIS FUNCTION)
+# -----------------------------
 @st.cache_data(ttl=3600, show_spinner=False)
 def generate_ai_insights_cached(period_key: str, payload: dict) -> dict:
     """
@@ -387,6 +389,7 @@ Rules:
 - Tone: friendly, practical, plain English.
 """
 
+    # Cheap + good default
     model_name = "gpt-4.1-mini"
 
     try:
@@ -398,6 +401,7 @@ Rules:
             ],
             temperature=0.3,
         )
+
         text = resp.choices[0].message.content.strip()
         return {"text": text, "model": model_name}
 
@@ -413,3 +417,33 @@ Rules:
         return {"error": f"OpenAI API error: {e.status_code}. Try again or check billing/access."}
     except Exception as e:
         return {"error": f"Unexpected OpenAI error: {e}"}
+
+# UI controls
+with st.expander("How this works", expanded=False):
+    st.write(
+        "This section is hybrid: the app computes the facts locally (totals, deltas, top drivers), "
+        "then AI turns those facts into plain-English insights. No raw transactions are sent."
+    )
+
+payload = build_insight_payload(df_filtered, expense_df)
+
+# Show a quick local, non-AI fallback (always available)
+st.markdown("**Quick Stats (local):**")
+col_a, col_b, col_c, col_d = st.columns(4)
+col_a.metric("Expected (Expenses)", f"${payload['totals']['expected_expenses']:,.0f}")
+col_b.metric("Actual (Expenses)", f"${payload['totals']['actual_expenses']:,.0f}")
+col_c.metric("Income (Actual)", f"${payload['totals']['income_actual']:,.0f}")
+col_d.metric("Savings (Actual)", f"${payload['totals']['savings_actual']:,.0f}")
+
+# AI button
+if st.button("✨ Generate insights with AI", type="primary"):
+    with st.spinner("Generating insights..."):
+        result = generate_ai_insights_cached(period_key=period_key, payload=payload)
+
+    if "error" in result:
+        st.error(result["error"])
+    else:
+        st.markdown(result["text"])
+        st.caption(f"Model: {result.get('model', 'unknown')} | Cached per selected months for ~1 hour")
+else:
+    st.info("Click **Generate insights with AI** to create personalized insights for the selected period.")
