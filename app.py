@@ -291,72 +291,57 @@ def highlight_rows(row, income_mask, expense_mask, subs_mask):
 
 # Masks
 income_mask = df_filtered["Category"].astype(str).str.strip().eq("Income")
-expense_mask = ~df_filtered["Category"].isin(EXCLUDED_CATEGORIES)
+expense_mask = ~df_filtered["Category"].astype(str).str.strip().eq("Income")
+subscription_mask = df_filtered["Category"].astype(str).str.strip().eq("Subscriptions")
 
-# Subscription heuristic: Category contains "subscription"/"membership"/"recurring"
-# OR Title contains common subscription keywords.
-subscription_mask = (
-    df_filtered["Category"].str.contains(r"subscription|membership|recurring", case=False, na=False) |
-    df_filtered["Title"].str.contains(r"subscription|subscr|membership|recurring|monthly|annual|renew", case=False, na=False)
-)
+# ✅ UPDATED: tracker-specific filtered tables (Actual only, per your rules)
+income_display_df = df_filtered[income_mask & (df_filtered["Type"] == "Actual")].copy()
+expense_display_df = df_filtered[expense_mask & (df_filtered["Type"] == "Actual")].copy()
+subs_display_df = df_filtered[subscription_mask & (df_filtered["Type"] == "Actual")].copy()
 
-# Income tracker
-income_df = df_filtered[income_mask].copy()
-income_total_actual = income_df[income_df["Type"] == "Actual"]["Amount"].sum()
-income_total_expected = income_df[income_df["Type"] == "Expected"]["Amount"].sum()
+# Income tracker (Income category only, Actual only)
+income_total_actual = income_display_df["Amount"].sum()
 
 with st.expander("💵 Income Summary (highlighted)"):
     styled_income = (
-        df_filtered.sort_values(["Date", "Title"], ascending=[False, True])
+        income_display_df.sort_values(["Date", "Title"], ascending=[False, True])
         .style
         .apply(lambda r: highlight_rows(r, income_mask, expense_mask, subscription_mask), axis=1)
     )
     st.dataframe(styled_income, width="stretch")
 
     st.success(
-        f"**Income Totals (current filters)**\n\n"
-        f"- Expected: **${income_total_expected:,.0f}**\n"
-        f"- Actual: **${income_total_actual:,.0f}**"
+        f"**Income Total (Actual, current filters):** **${income_total_actual:,.0f}**"
     )
 
-# Expense tracker
-expense_total_actual = expense_df[expense_df["Type"] == "Actual"]["Amount"].sum()
-expense_total_expected = expense_df[expense_df["Type"] == "Expected"]["Amount"].sum()
+# Expense tracker (NOT Income category, Actual only)
+expense_total_actual_tracker = expense_display_df["Amount"].sum()
 
 with st.expander("💸 Expenses Summary (highlighted)"):
     styled_expenses = (
-        df_filtered.sort_values(["Date", "Title"], ascending=[False, True])
+        expense_display_df.sort_values(["Date", "Title"], ascending=[False, True])
         .style
         .apply(lambda r: highlight_rows(r, income_mask, expense_mask, subscription_mask), axis=1)
     )
     st.dataframe(styled_expenses, width="stretch")
 
     st.warning(
-        f"**Expense Totals (current filters)**\n\n"
-        f"- Expected: **${expense_total_expected:,.0f}**\n"
-        f"- Actual: **${expense_total_actual:,.0f}**\n"
-        f"- Variance (Actual - Expected): **${(expense_total_actual - expense_total_expected):,.0f}**"
+        f"**Expense Total (Actual, current filters):** **${expense_total_actual_tracker:,.0f}**"
     )
 
-# Subscription tracker
-subs_df = df_filtered[subscription_mask].copy()
-subs_total_actual = subs_df[subs_df["Type"] == "Actual"]["Amount"].sum()
-subs_total_expected = subs_df[subs_df["Type"] == "Expected"]["Amount"].sum()
+# Subscription tracker (Subscriptions category only, Actual only)
+subs_total_actual = subs_display_df["Amount"].sum()
 
 with st.expander("🔁 Subscription Tracker (highlighted)"):
     styled_subs = (
-        df_filtered.sort_values(["Date", "Title"], ascending=[False, True])
+        subs_display_df.sort_values(["Date", "Title"], ascending=[False, True])
         .style
         .apply(lambda r: highlight_rows(r, income_mask, expense_mask, subscription_mask), axis=1)
     )
     st.dataframe(styled_subs, width="stretch")
 
     st.info(
-        f"**Subscription Totals (current filters)**\n\n"
-        f"- Expected: **${subs_total_expected:,.0f}**\n"
-        f"- Actual: **${subs_total_actual:,.0f}**\n\n"
-        f"_Note: subscriptions are detected via keywords in Category/Title. "
-        f"If you want, we can tighten this to a strict tag like Category = 'Subscription'._"
+        f"**Subscription Total (Actual, current filters):** **${subs_total_actual:,.0f}**"
     )
 
 # -----------------------------
