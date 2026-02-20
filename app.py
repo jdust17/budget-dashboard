@@ -299,12 +299,34 @@ income_display_df = df_filtered[income_mask & (df_filtered["Type"] == "Actual")]
 expense_display_df = df_filtered[expense_mask & (df_filtered["Type"] == "Actual")].copy()
 subs_display_df = df_filtered[subscription_mask & (df_filtered["Type"] == "Actual")].copy()
 
+# ✅ ADD: tidy-up helper for tracker display only
+def tidy_tracker_display(df_in: pd.DataFrame) -> pd.DataFrame:
+    df_out = df_in.copy()
+
+    # Drop empty/unneeded columns if they exist
+    cols_to_drop = [c for c in ["Updated", "2/18/26"] if c in df_out.columns]
+    if cols_to_drop:
+        df_out = df_out.drop(columns=cols_to_drop)
+
+    # Shorten Date (remove time portion)
+    if "Date" in df_out.columns:
+        df_out["Date"] = pd.to_datetime(df_out["Date"], errors="coerce").dt.date
+
+    # Format Amount as currency with 2 decimals (display only)
+    if "Amount" in df_out.columns:
+        df_out["Amount"] = df_out["Amount"].apply(lambda x: f"${x:,.2f}")
+
+    return df_out
+
 # Income tracker (Income category only, Actual only)
 income_total_actual = income_display_df["Amount"].sum()
 
 with st.expander("💵 Income Summary (highlighted)"):
-    styled_income = (
+    income_show = tidy_tracker_display(
         income_display_df.sort_values(["Date", "Title"], ascending=[False, True])
+    )
+    styled_income = (
+        income_show
         .style
         .apply(lambda r: highlight_rows(r, income_mask, expense_mask, subscription_mask), axis=1)
     )
@@ -318,8 +340,11 @@ with st.expander("💵 Income Summary (highlighted)"):
 expense_total_actual_tracker = expense_display_df["Amount"].sum()
 
 with st.expander("💸 Expenses Summary (highlighted)"):
-    styled_expenses = (
+    expense_show = tidy_tracker_display(
         expense_display_df.sort_values(["Date", "Title"], ascending=[False, True])
+    )
+    styled_expenses = (
+        expense_show
         .style
         .apply(lambda r: highlight_rows(r, income_mask, expense_mask, subscription_mask), axis=1)
     )
@@ -333,8 +358,11 @@ with st.expander("💸 Expenses Summary (highlighted)"):
 subs_total_actual = subs_display_df["Amount"].sum()
 
 with st.expander("🔁 Subscription Tracker (highlighted)"):
-    styled_subs = (
+    subs_show = tidy_tracker_display(
         subs_display_df.sort_values(["Date", "Title"], ascending=[False, True])
+    )
+    styled_subs = (
+        subs_show
         .style
         .apply(lambda r: highlight_rows(r, income_mask, expense_mask, subscription_mask), axis=1)
     )
