@@ -168,9 +168,9 @@ net_variance = income_actual - actual_expenses
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Expected Expenses", f"${expected_expenses:,.0f}")
 col2.metric("Actual Expenses", f"${actual_expenses:,.0f}")
-col3.metric("Expenses PvA", f"${variance_expenses:,.0f}")
+col3.metric("Expenses EvA", f"${variance_expenses:,.0f}")  # ✅ CHANGED PvA -> EvA
 col4.metric("Income Actual", f"${income_actual:,.0f}")
-col5.metric("Savings Actual", f"${net_variance:,.0f}")
+col5.metric("Money Left to Spend", f"${net_variance:,.0f}")  # ✅ CHANGED label
 
 # -----------------------------
 # EXPECTED VS ACTUAL BY CATEGORY (EXPENSES ONLY)
@@ -323,7 +323,7 @@ income_total_actual = income_display_df["Amount"].sum()
 
 with st.expander("💵 Income Summary (highlighted)"):
     income_show = tidy_tracker_display(
-        income_display_df.sort_values(["Date", "Title"], ascending=[False, True])
+        income_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])  # ✅ Category alpha
     )
     styled_income = (
         income_show
@@ -341,7 +341,7 @@ expense_total_actual_tracker = expense_display_df["Amount"].sum()
 
 with st.expander("💸 Expenses Summary (highlighted)"):
     expense_show = tidy_tracker_display(
-        expense_display_df.sort_values(["Date", "Title"], ascending=[False, True])
+        expense_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])  # ✅ Category alpha
     )
     styled_expenses = (
         expense_show
@@ -359,7 +359,7 @@ subs_total_actual = subs_display_df["Amount"].sum()
 
 with st.expander("🔁 Subscription Tracker (highlighted)"):
     subs_show = tidy_tracker_display(
-        subs_display_df.sort_values(["Date", "Title"], ascending=[False, True])
+        subs_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])  # ✅ Category alpha
     )
     styled_subs = (
         subs_show
@@ -380,4 +380,3 @@ with st.expander("Show Raw Data"):
         df_filtered.sort_values(["Date", "Title"], ascending=[False, True]),
         width="stretch"
     )
-
