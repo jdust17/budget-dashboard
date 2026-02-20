@@ -107,10 +107,36 @@ selected_months = st.sidebar.multiselect(
     default=MONTH_ORDER
 )
 
-# ✅ UPDATED: Apply BOTH quarter + month filters
+# ✅ ADD: Category filter + Exclude Categories multi-select (from sheet categories)
+category_options = (
+    df["Category"]
+    .dropna()
+    .astype(str)
+    .str.strip()
+    .replace("", "Uncategorized remembering")
+    .unique()
+    .tolist()
+)
+category_options = sorted(category_options)
+
+selected_categories = st.sidebar.multiselect(
+    "Include Category(s)",
+    options=category_options,
+    default=category_options
+)
+
+excluded_categories_ui = st.sidebar.multiselect(
+    "Exclude Category(s)",
+    options=category_options,
+    default=[]
+)
+
+# ✅ UPDATED: Apply Quarter + Month + Category include/exclude filters
 df_filtered = df[
     (df["Quarter"].isin(selected_quarters)) &
-    (df["Month"].isin(selected_months))
+    (df["Month"].isin(selected_months)) &
+    (df["Category"].isin(selected_categories)) &
+    (~df["Category"].isin(excluded_categories_ui))
 ]
 
 # -----------------------------
@@ -201,7 +227,7 @@ st.subheader("🏆 Top 10 Spending Categories")
 top10 = (
     expense_df[
         (expense_df["Type"] == "Actual") &
-        (~expense_df["Category"].str.contains("Mortgage", case=False, na=False))
+        (~df_filtered["Category"].str.contains("Mortgage", case=False, na=False))
     ]
     .groupby("Title", as_index=False)["Amount"]
     .sum()
