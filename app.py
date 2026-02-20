@@ -31,7 +31,7 @@ def load_data():
 
     df.columns = df.columns.str.strip()
 
-    required_cols = ["Date", "Title", "Category", "Type", "Amount"]
+    required_cols = ["Date", "Title", "Category", "Type", "Amount", "Status"]
     missing = [c for c in required_cols if c not in df.columns]
 
     if missing:
@@ -42,6 +42,7 @@ def load_data():
     df["Title"] = df["Title"].astype(str).str.strip()
     df["Category"] = df["Category"].astype(str).str.strip().replace("", "Uncategorized remembering")
     df["Type"] = df["Type"].astype(str).str.strip()
+    df["Status"] = df["Status"].astype(str).str.strip()
 
     # Clean amounts
     df["Amount"] = (
@@ -148,235 +149,331 @@ EXCLUDED_CATEGORIES = ["Income", "Investment", "Investments"]
 expense_df = df_filtered[~df_filtered["Category"].isin(EXCLUDED_CATEGORIES)]
 
 # -----------------------------
-# KEY METRICS — EXPENSES ONLY
+# ✅ ADD: TABS
 # -----------------------------
-st.subheader("📊 Key Metrics")
+tab_dashboard, tab_savings = st.tabs(["Dashboard", "Savings"])
 
-expected_expenses = expense_df[expense_df["Type"] == "Expected"]["Amount"].sum()
-actual_expenses = expense_df[expense_df["Type"] == "Actual"]["Amount"].sum()
-variance_expenses = actual_expenses - expected_expenses
+with tab_dashboard:
+    # -----------------------------
+    # KEY METRICS — EXPENSES ONLY
+    # -----------------------------
+    st.subheader("📊 Key Metrics")
 
-# Income Actual
-income_actual = df_filtered[
-    (df_filtered["Category"] == "Income") &
-    (df_filtered["Type"] == "Actual")
-]["Amount"].sum()
+    expected_expenses = expense_df[expense_df["Type"] == "Expected"]["Amount"].sum()
+    actual_expenses = expense_df[expense_df["Type"] == "Actual"]["Amount"].sum()
+    variance_expenses = actual_expenses - expected_expenses
 
-# Net variance
-net_variance = income_actual - actual_expenses
+    # Income Actual
+    income_actual = df_filtered[
+        (df_filtered["Category"] == "Income") &
+        (df_filtered["Type"] == "Actual")
+    ]["Amount"].sum()
 
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Expected Expenses", f"${expected_expenses:,.0f}")
-col2.metric("Actual Expenses", f"${actual_expenses:,.0f}")
-col3.metric("Expenses EvA", f"${variance_expenses:,.0f}")  # ✅ CHANGED PvA -> EvA
-col4.metric("Income Actual", f"${income_actual:,.0f}")
-col5.metric("Money Left to Spend", f"${net_variance:,.0f}")  # ✅ CHANGED label
+    # Net variance
+    net_variance = income_actual - actual_expenses
 
-# -----------------------------
-# EXPECTED VS ACTUAL BY CATEGORY (EXPENSES ONLY)
-# -----------------------------
-st.subheader("📊 Expected vs Actual by Category")
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Expected Expenses", f"${expected_expenses:,.0f}")
+    col2.metric("Actual Expenses", f"${actual_expenses:,.0f}")
+    col3.metric("Expenses EvA", f"${variance_expenses:,.0f}")
+    col4.metric("Income Actual", f"${income_actual:,.0f}")
+    col5.metric("Money Left to Spend", f"${net_variance:,.0f}")
 
-# 🔧 Remove Mortgage only for this chart
-chart_df = expense_df[~expense_df["Category"].str.contains("Mortgage", case=False, na=False)]
+    # -----------------------------
+    # EXPECTED VS ACTUAL BY CATEGORY (EXPENSES ONLY)
+    # -----------------------------
+    st.subheader("📊 Expected vs Actual by Category")
 
-summary_df = (
-    chart_df
-    .groupby(["Category", "Type"], as_index=False)["Amount"]
-    .sum()
-)
+    # 🔧 Remove Mortgage only for this chart
+    chart_df = expense_df[~expense_df["Category"].str.contains("Mortgage", case=False, na=False)]
 
-fig_summary = px.bar(
-    summary_df,
-    x="Category",
-    y="Amount",
-    color="Type",
-    barmode="group"
-)
-
-fig_summary.update_layout(template="plotly_white")
-st.plotly_chart(fig_summary, width="stretch")
-
-# -----------------------------
-# MONTHLY SPENDING TREND (ACTUAL ONLY)
-# -----------------------------
-st.subheader("📈 Monthly Spending Trend (Actual)")
-
-monthly_trend = (
-    expense_df[expense_df["Type"] == "Actual"]
-    .groupby("Month", as_index=False)["Amount"]
-    .sum()
-    .sort_values("Month")
-)
-
-fig_trend = px.line(
-    monthly_trend,
-    x="Month",
-    y="Amount",
-    markers=True
-)
-
-fig_trend.update_layout(template="plotly_white")
-st.plotly_chart(fig_trend, width="stretch")
-
-# -----------------------------
-# TOP 10 SPENDING (NO INCOME OR MORTGAGE)
-# -----------------------------
-st.subheader("🏆 Top 10 Spending Categories")
-
-top10 = (
-    expense_df[
-        (expense_df["Type"] == "Actual") &
-        (~df_filtered["Category"].str.contains("Mortgage", case=False, na=False))
-    ]
-    .groupby("Title", as_index=False)["Amount"]
-    .sum()
-    .sort_values("Amount", ascending=False)
-    .head(10)
-)
-
-fig_top10 = px.bar(
-    top10,
-    x="Amount",
-    y="Title",
-    orientation="h",
-)
-
-fig_top10.update_layout(
-    template="plotly_white",
-    yaxis=dict(autorange="reversed")
-)
-
-st.plotly_chart(fig_top10, width="stretch")
-
-# -----------------------------
-# OVER / UNDER BUDGET (EXPENSES ONLY)
-# -----------------------------
-st.subheader("💸 Over / Under Budget")
-
-variance_df = (
-    summary_df
-    .pivot(index="Category", columns="Type", values="Amount")
-    .fillna(0)
-)
-
-variance_df["Variance"] = variance_df.get("Actual", 0) - variance_df.get("Expected", 0)
-variance_df = variance_df.reset_index()
-
-fig_variance = px.bar(
-    variance_df,
-    x="Category",
-    y="Variance",
-    color="Variance"
-)
-
-fig_variance.update_layout(template="plotly_white")
-st.plotly_chart(fig_variance, width="stretch")
-
-# -----------------------------
-# ✅ ADD: INCOME / EXPENSE / SUBSCRIPTION TRACKERS
-# -----------------------------
-st.subheader("🧾 Trackers")
-
-# Row highlighter helper
-def highlight_rows(row, income_mask, expense_mask, subs_mask):
-    # return list of CSS styles aligned to row columns
-    if subs_mask.loc[row.name]:
-        return ["background-color: rgba(255, 235, 59, 0.25)"] * len(row)  # yellow
-    if income_mask.loc[row.name]:
-        return ["background-color: rgba(76, 175, 80, 0.20)"] * len(row)   # green
-    if expense_mask.loc[row.name]:
-        return ["background-color: rgba(244, 67, 54, 0.15)"] * len(row)   # red
-    return [""] * len(row)
-
-# Masks
-income_mask = df_filtered["Category"].astype(str).str.strip().eq("Income")
-expense_mask = ~df_filtered["Category"].astype(str).str.strip().eq("Income")
-subscription_mask = df_filtered["Category"].astype(str).str.strip().eq("Subscription")
-
-# ✅ UPDATED: tracker-specific filtered tables (Actual only, per your rules)
-income_display_df = df_filtered[income_mask & (df_filtered["Type"] == "Actual")].copy()
-expense_display_df = df_filtered[expense_mask & (df_filtered["Type"] == "Actual")].copy()
-subs_display_df = df_filtered[subscription_mask & (df_filtered["Type"] == "Actual")].copy()
-
-# ✅ ADD: tidy-up helper for tracker display only
-def tidy_tracker_display(df_in: pd.DataFrame) -> pd.DataFrame:
-    df_out = df_in.copy()
-
-    # Drop empty/unneeded columns if they exist
-    cols_to_drop = [c for c in ["Updated", "2/18/26"] if c in df_out.columns]
-    if cols_to_drop:
-        df_out = df_out.drop(columns=cols_to_drop)
-
-    # Shorten Date (remove time portion)
-    if "Date" in df_out.columns:
-        df_out["Date"] = pd.to_datetime(df_out["Date"], errors="coerce").dt.date
-
-    # Format Amount as currency with 2 decimals (display only)
-    if "Amount" in df_out.columns:
-        df_out["Amount"] = df_out["Amount"].apply(lambda x: f"${x:,.2f}")
-
-    return df_out
-
-# Income tracker (Income category only, Actual only)
-income_total_actual = income_display_df["Amount"].sum()
-
-with st.expander("💵 Income Summary (highlighted)"):
-    income_show = tidy_tracker_display(
-        income_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])  # ✅ Category alpha
-    )
-    styled_income = (
-        income_show
-        .style
-        .apply(lambda r: highlight_rows(r, income_mask, expense_mask, subscription_mask), axis=1)
-    )
-    st.dataframe(styled_income, width="stretch")
-
-    st.success(
-        f"**Income Total (Actual, current filters):** **${income_total_actual:,.0f}**"
+    summary_df = (
+        chart_df
+        .groupby(["Category", "Type"], as_index=False)["Amount"]
+        .sum()
     )
 
-# Expense tracker (NOT Income category, Actual only)
-expense_total_actual_tracker = expense_display_df["Amount"].sum()
-
-with st.expander("💸 Expenses Summary (highlighted)"):
-    expense_show = tidy_tracker_display(
-        expense_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])  # ✅ Category alpha
-    )
-    styled_expenses = (
-        expense_show
-        .style
-        .apply(lambda r: highlight_rows(r, income_mask, expense_mask, subscription_mask), axis=1)
-    )
-    st.dataframe(styled_expenses, width="stretch")
-
-    st.warning(
-        f"**Expense Total (Actual, current filters):** **${expense_total_actual_tracker:,.0f}**"
+    fig_summary = px.bar(
+        summary_df,
+        x="Category",
+        y="Amount",
+        color="Type",
+        barmode="group"
     )
 
-# Subscription tracker (Subscriptions category only, Actual only)
-subs_total_actual = subs_display_df["Amount"].sum()
+    fig_summary.update_layout(template="plotly_white")
+    st.plotly_chart(fig_summary, width="stretch")
 
-with st.expander("🔁 Subscription Tracker (highlighted)"):
-    subs_show = tidy_tracker_display(
-        subs_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])  # ✅ Category alpha
-    )
-    styled_subs = (
-        subs_show
-        .style
-        .apply(lambda r: highlight_rows(r, income_mask, expense_mask, subscription_mask), axis=1)
-    )
-    st.dataframe(styled_subs, width="stretch")
+    # -----------------------------
+    # MONTHLY SPENDING TREND (ACTUAL ONLY)
+    # -----------------------------
+    st.subheader("📈 Monthly Spending Trend (Actual)")
 
-    st.info(
-        f"**Subscription Total (Actual, current filters):** **${subs_total_actual:,.0f}**"
+    monthly_trend = (
+        expense_df[expense_df["Type"] == "Actual"]
+        .groupby("Month", as_index=False)["Amount"]
+        .sum()
+        .sort_values("Month")
     )
 
-# -----------------------------
-# RAW DATA — SORTED
-# -----------------------------
-with st.expander("Show Raw Data"):
-    st.dataframe(
-        df_filtered.sort_values(["Date", "Title"], ascending=[False, True]),
-        width="stretch"
+    fig_trend = px.line(
+        monthly_trend,
+        x="Month",
+        y="Amount",
+        markers=True
     )
+
+    fig_trend.update_layout(template="plotly_white")
+    st.plotly_chart(fig_trend, width="stretch")
+
+    # -----------------------------
+    # TOP 10 SPENDING (NO INCOME OR MORTGAGE)
+    # -----------------------------
+    st.subheader("🏆 Top 10 Spending Categories")
+
+    top10 = (
+        expense_df[
+            (expense_df["Type"] == "Actual") &
+            (~df_filtered["Category"].str.contains("Mortgage", case=False, na=False))
+        ]
+        .groupby("Title", as_index=False)["Amount"]
+        .sum()
+        .sort_values("Amount", ascending=False)
+        .head(10)
+    )
+
+    fig_top10 = px.bar(
+        top10,
+        x="Amount",
+        y="Title",
+        orientation="h",
+    )
+
+    fig_top10.update_layout(
+        template="plotly_white",
+        yaxis=dict(autorange="reversed")
+    )
+
+    st.plotly_chart(fig_top10, width="stretch")
+
+    # -----------------------------
+    # OVER / UNDER BUDGET (EXPENSES ONLY)
+    # -----------------------------
+    st.subheader("💸 Over / Under Budget")
+
+    variance_df = (
+        summary_df
+        .pivot(index="Category", columns="Type", values="Amount")
+        .fillna(0)
+    )
+
+    variance_df["Variance"] = variance_df.get("Actual", 0) - variance_df.get("Expected", 0)
+    variance_df = variance_df.reset_index()
+
+    fig_variance = px.bar(
+        variance_df,
+        x="Category",
+        y="Variance",
+        color="Variance"
+    )
+
+    fig_variance.update_layout(template="plotly_white")
+    st.plotly_chart(fig_variance, width="stretch")
+
+    # -----------------------------
+    # ✅ ADD: INCOME / EXPENSE / SUBSCRIPTION TRACKERS
+    # -----------------------------
+    st.subheader("🧾 Trackers")
+
+    # Row highlighter helper
+    def highlight_rows(row, income_mask, expense_mask, subs_mask):
+        # return list of CSS styles aligned to row columns
+        if subs_mask.loc[row.name]:
+            return ["background-color: rgba(255, 235, 59, 0.25)"] * len(row)  # yellow
+        if income_mask.loc[row.name]:
+            return ["background-color: rgba(76, 175, 80, 0.20)"] * len(row)   # green
+        if expense_mask.loc[row.name]:
+            return ["background-color: rgba(244, 67, 54, 0.15)"] * len(row)   # red
+        return [""] * len(row)
+
+    # Masks
+    income_mask = df_filtered["Category"].astype(str).str.strip().eq("Income")
+    expense_mask = ~df_filtered["Category"].astype(str).str.strip().eq("Income")
+    subscription_mask = df_filtered["Category"].astype(str).str.strip().eq("Subscription")
+
+    # ✅ UPDATED: tracker-specific filtered tables (Actual only, per your rules)
+    income_display_df = df_filtered[income_mask & (df_filtered["Type"] == "Actual")].copy()
+    expense_display_df = df_filtered[expense_mask & (df_filtered["Type"] == "Actual")].copy()
+    subs_display_df = df_filtered[subscription_mask & (df_filtered["Type"] == "Actual")].copy()
+
+    # ✅ ADD: tidy-up helper for tracker display only
+    def tidy_tracker_display(df_in: pd.DataFrame) -> pd.DataFrame:
+        df_out = df_in.copy()
+
+        # Drop empty/unneeded columns if they exist
+        cols_to_drop = [c for c in ["Updated", "2/18/26"] if c in df_out.columns]
+        if cols_to_drop:
+            df_out = df_out.drop(columns=cols_to_drop)
+
+        # Shorten Date (remove time portion)
+        if "Date" in df_out.columns:
+            df_out["Date"] = pd.to_datetime(df_out["Date"], errors="coerce").dt.date
+
+        # Format Amount as currency with 2 decimals (display only)
+        if "Amount" in df_out.columns:
+            df_out["Amount"] = df_out["Amount"].apply(lambda x: f"${x:,.2f}")
+
+        return df_out
+
+    # Income tracker (Income category only, Actual only)
+    income_total_actual = income_display_df["Amount"].sum()
+
+    with st.expander("💵 Income Summary (highlighted)"):
+        income_show = tidy_tracker_display(
+            income_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])
+        )
+        styled_income = (
+            income_show
+            .style
+            .apply(lambda r: highlight_rows(r, income_mask, expense_mask, subscription_mask), axis=1)
+        )
+        st.dataframe(styled_income, width="stretch")
+
+        st.success(
+            f"**Income Total (Actual, current filters):** **${income_total_actual:,.0f}**"
+        )
+
+    # Expense tracker (NOT Income category, Actual only)
+    expense_total_actual_tracker = expense_display_df["Amount"].sum()
+
+    with st.expander("💸 Expenses Summary (highlighted)"):
+        expense_show = tidy_tracker_display(
+            expense_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])
+        )
+        styled_expenses = (
+            expense_show
+            .style
+            .apply(lambda r: highlight_rows(r, income_mask, expense_mask, subscription_mask), axis=1)
+        )
+        st.dataframe(styled_expenses, width="stretch")
+
+        st.warning(
+            f"**Expense Total (Actual, current filters):** **${expense_total_actual_tracker:,.0f}**"
+        )
+
+    # Subscription tracker (Subscriptions category only, Actual only)
+    subs_total_actual = subs_display_df["Amount"].sum()
+
+    with st.expander("🔁 Subscription Tracker (highlighted)"):
+        subs_show = tidy_tracker_display(
+            subs_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])
+        )
+        styled_subs = (
+            subs_show
+            .style
+            .apply(lambda r: highlight_rows(r, income_mask, expense_mask, subscription_mask), axis=1)
+        )
+        st.dataframe(styled_subs, width="stretch")
+
+        st.info(
+            f"**Subscription Total (Actual, current filters):** **${subs_total_actual:,.0f}**"
+        )
+
+    # -----------------------------
+    # RAW DATA — SORTED
+    # -----------------------------
+    with st.expander("Show Raw Data"):
+        st.dataframe(
+            df_filtered.sort_values(["Date", "Title"], ascending=[False, True]),
+            width="stretch"
+        )
+
+with tab_savings:
+    savings_df = df_filtered[df_filtered["Status"].astype(str).str.strip().eq("Savings")]
+
+    # -----------------------------
+    # KEY METRICS — SAVINGS ONLY
+    # -----------------------------
+    st.subheader("📊 Savings Key Metrics")
+
+    expected_savings = savings_df[savings_df["Type"] == "Expected"]["Amount"].sum()
+    actual_savings = savings_df[savings_df["Type"] == "Actual"]["Amount"].sum()
+    variance_savings = actual_savings - expected_savings
+
+    s1, s2, s3 = st.columns(3)
+    s1.metric("Expected Savings", f"${expected_savings:,.0f}")
+    s2.metric("Actual Savings", f"${actual_savings:,.0f}")
+    s3.metric("Savings EvA", f"${variance_savings:,.0f}")
+
+    # -----------------------------
+    # EXPECTED VS ACTUAL SAVINGS BY CATEGORY
+    # -----------------------------
+    st.subheader("📊 Expected vs Actual Savings by Category")
+
+    savings_summary_df = (
+        savings_df
+        .groupby(["Category", "Type"], as_index=False)["Amount"]
+        .sum()
+    )
+
+    fig_savings_summary = px.bar(
+        savings_summary_df,
+        x="Category",
+        y="Amount",
+        color="Type",
+        barmode="group"
+    )
+
+    fig_savings_summary.update_layout(template="plotly_white")
+    st.plotly_chart(fig_savings_summary, width="stretch")
+
+    # -----------------------------
+    # TOP 5 SAVINGS CATEGORIES (ACTUAL ONLY)
+    # -----------------------------
+    st.subheader("🏆 Top 5 Savings Categories")
+
+    top5_savings = (
+        savings_df[savings_df["Type"] == "Actual"]
+        .groupby("Category", as_index=False)["Amount"]
+        .sum()
+        .sort_values("Amount", ascending=False)
+        .head(5)
+    )
+
+    fig_top5_savings = px.bar(
+        top5_savings,
+        x="Amount",
+        y="Category",
+        orientation="h",
+    )
+
+    fig_top5_savings.update_layout(
+        template="plotly_white",
+        yaxis=dict(autorange="reversed")
+    )
+
+    st.plotly_chart(fig_top5_savings, width="stretch")
+
+    # -----------------------------
+    # OVER / UNDER SAVINGS
+    # -----------------------------
+    st.subheader("💸 Over / Under Savings")
+
+    savings_variance_df = (
+        savings_summary_df
+        .pivot(index="Category", columns="Type", values="Amount")
+        .fillna(0)
+    )
+
+    savings_variance_df["Variance"] = savings_variance_df.get("Actual", 0) - savings_variance_df.get("Expected", 0)
+    savings_variance_df = savings_variance_df.reset_index()
+
+    fig_savings_variance = px.bar(
+        savings_variance_df,
+        x="Category",
+        y="Variance",
+        color="Variance"
+    )
+
+    fig_savings_variance.update_layout(template="plotly_white")
+    st.plotly_chart(fig_savings_variance, width="stretch")
