@@ -149,7 +149,7 @@ EXCLUDED_CATEGORIES = ["Income", "Investment", "Investments"]
 expense_df = df_filtered[~df_filtered["Category"].isin(EXCLUDED_CATEGORIES)]
 
 # -----------------------------
-# ✅ ADD: TABS
+# ✅ ADD: TABS (required for Savings tab)
 # -----------------------------
 tab_dashboard, tab_savings = st.tabs(["Dashboard", "Savings"])
 
@@ -175,9 +175,9 @@ with tab_dashboard:
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Expected Expenses", f"${expected_expenses:,.0f}")
     col2.metric("Actual Expenses", f"${actual_expenses:,.0f}")
-    col3.metric("Expenses EvA", f"${variance_expenses:,.0f}")
+    col3.metric("Expenses EvA", f"${variance_expenses:,.0f}")  # ✅ CHANGED PvA -> EvA
     col4.metric("Income Actual", f"${income_actual:,.0f}")
-    col5.metric("Money Left to Spend", f"${net_variance:,.0f}")
+    col5.metric("Money Left to Spend", f"${net_variance:,.0f}")  # ✅ CHANGED label
 
     # -----------------------------
     # EXPECTED VS ACTUAL BY CATEGORY (EXPENSES ONLY)
@@ -330,7 +330,7 @@ with tab_dashboard:
 
     with st.expander("💵 Income Summary (highlighted)"):
         income_show = tidy_tracker_display(
-            income_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])
+            income_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])  # ✅ Category alpha
         )
         styled_income = (
             income_show
@@ -348,7 +348,7 @@ with tab_dashboard:
 
     with st.expander("💸 Expenses Summary (highlighted)"):
         expense_show = tidy_tracker_display(
-            expense_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])
+            expense_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])  # ✅ Category alpha
         )
         styled_expenses = (
             expense_show
@@ -366,7 +366,7 @@ with tab_dashboard:
 
     with st.expander("🔁 Subscription Tracker (highlighted)"):
         subs_show = tidy_tracker_display(
-            subs_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])
+            subs_display_df.sort_values(["Category", "Date", "Title"], ascending=[True, False, True])  # ✅ Category alpha
         )
         styled_subs = (
             subs_show
@@ -389,91 +389,14 @@ with tab_dashboard:
         )
 
 with tab_savings:
+    # ✅ Savings-only filtered dataset (Status == "Savings")
     savings_df = df_filtered[df_filtered["Status"].astype(str).str.strip().eq("Savings")]
 
     # -----------------------------
-    # KEY METRICS — SAVINGS ONLY
+    # ✅ ADD: RAW DATA — SAVINGS ONLY
     # -----------------------------
-    st.subheader("📊 Savings Key Metrics")
-
-    expected_savings = savings_df[savings_df["Type"] == "Expected"]["Amount"].sum()
-    actual_savings = savings_df[savings_df["Type"] == "Actual"]["Amount"].sum()
-    variance_savings = actual_savings - expected_savings
-
-    s1, s2, s3 = st.columns(3)
-    s1.metric("Expected Savings", f"${expected_savings:,.0f}")
-    s2.metric("Actual Savings", f"${actual_savings:,.0f}")
-    s3.metric("Savings EvA", f"${variance_savings:,.0f}")
-
-    # -----------------------------
-    # EXPECTED VS ACTUAL SAVINGS BY CATEGORY
-    # -----------------------------
-    st.subheader("📊 Expected vs Actual Savings by Category")
-
-    savings_summary_df = (
-        savings_df
-        .groupby(["Category", "Type"], as_index=False)["Amount"]
-        .sum()
-    )
-
-    fig_savings_summary = px.bar(
-        savings_summary_df,
-        x="Category",
-        y="Amount",
-        color="Type",
-        barmode="group"
-    )
-
-    fig_savings_summary.update_layout(template="plotly_white")
-    st.plotly_chart(fig_savings_summary, width="stretch")
-
-    # -----------------------------
-    # TOP 5 SAVINGS CATEGORIES (ACTUAL ONLY)
-    # -----------------------------
-    st.subheader("🏆 Top 5 Savings Categories")
-
-    top5_savings = (
-        savings_df[savings_df["Type"] == "Actual"]
-        .groupby("Category", as_index=False)["Amount"]
-        .sum()
-        .sort_values("Amount", ascending=False)
-        .head(5)
-    )
-
-    fig_top5_savings = px.bar(
-        top5_savings,
-        x="Amount",
-        y="Category",
-        orientation="h",
-    )
-
-    fig_top5_savings.update_layout(
-        template="plotly_white",
-        yaxis=dict(autorange="reversed")
-    )
-
-    st.plotly_chart(fig_top5_savings, width="stretch")
-
-    # -----------------------------
-    # OVER / UNDER SAVINGS
-    # -----------------------------
-    st.subheader("💸 Over / Under Savings")
-
-    savings_variance_df = (
-        savings_summary_df
-        .pivot(index="Category", columns="Type", values="Amount")
-        .fillna(0)
-    )
-
-    savings_variance_df["Variance"] = savings_variance_df.get("Actual", 0) - savings_variance_df.get("Expected", 0)
-    savings_variance_df = savings_variance_df.reset_index()
-
-    fig_savings_variance = px.bar(
-        savings_variance_df,
-        x="Category",
-        y="Variance",
-        color="Variance"
-    )
-
-    fig_savings_variance.update_layout(template="plotly_white")
-    st.plotly_chart(fig_savings_variance, width="stretch")
+    with st.expander("Show Savings Raw Data"):
+        st.dataframe(
+            savings_df.sort_values(["Date", "Title"], ascending=[False, True]),
+            width="stretch"
+        )
