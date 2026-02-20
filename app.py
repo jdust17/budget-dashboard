@@ -292,7 +292,7 @@ def highlight_rows(row, income_mask, expense_mask, subs_mask):
 # Masks
 income_mask = df_filtered["Category"].astype(str).str.strip().eq("Income")
 expense_mask = ~df_filtered["Category"].astype(str).str.strip().eq("Income")
-subscription_mask = df_filtered["Category"].astype(str).str.strip().eq("Subscriptions")
+subscription_mask = df_filtered["Category"].astype(str).str.strip().eq("Subscription")
 
 # ✅ UPDATED: tracker-specific filtered tables (Actual only, per your rules)
 income_display_df = df_filtered[income_mask & (df_filtered["Type"] == "Actual")].copy()
@@ -380,3 +380,4 @@ with st.expander("Show Raw Data"):
         df_filtered.sort_values(["Date", "Title"], ascending=[False, True]),
         width="stretch"
     )
+
