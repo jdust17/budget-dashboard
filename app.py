@@ -401,13 +401,25 @@ with tab_savings:
         s3.metric("Savings EvA", "$0")
 
         st.subheader("📊 Expected vs Actual Savings by Category")
-        st.plotly_chart(px.bar(pd.DataFrame(columns=["Category", "Amount", "Type"]), x="Category", y="Amount", color="Type", barmode="group").update_layout(template="plotly_white"), width="stretch")
+        st.plotly_chart(
+            px.bar(pd.DataFrame(columns=["Category", "Amount", "Type"]), x="Category", y="Amount", color="Type", barmode="group").update_layout(template="plotly_white"),
+            width="stretch",
+            key="savings_summary_empty"  # ✅ add unique key
+        )
 
         st.subheader("🏆 Top 5 Savings Categories")
-        st.plotly_chart(px.bar(pd.DataFrame(columns=["Category", "Amount"]), x="Amount", y="Category", orientation="h").update_layout(template="plotly_white", yaxis=dict(autorange="reversed")), width="stretch")
+        st.plotly_chart(
+            px.bar(pd.DataFrame(columns=["Category", "Amount"]), x="Amount", y="Category", orientation="h").update_layout(template="plotly_white", yaxis=dict(autorange="reversed")),
+            width="stretch",
+            key="savings_top5_empty"  # ✅ add unique key
+        )
 
         st.subheader("💸 Over / Under Savings")
-        st.plotly_chart(px.bar(pd.DataFrame(columns=["Category", "Variance"]), x="Category", y="Variance", color="Variance").update_layout(template="plotly_white"), width="stretch")
+        st.plotly_chart(
+            px.bar(pd.DataFrame(columns=["Category", "Variance"]), x="Category", y="Variance", color="Variance").update_layout(template="plotly_white"),
+            width="stretch",
+            key="savings_variance_empty"  # ✅ add unique key
+        )
 
         with st.expander("Show Savings Raw Data"):
             st.dataframe(
