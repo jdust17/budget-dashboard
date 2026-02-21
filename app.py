@@ -11,7 +11,7 @@ st.title("💰 Personal Finance Dashboard")
 # -----------------------------
 # GOOGLE SHEET CSV EXPORT
 # -----------------------------
-SUMMARY_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSk2lX_RGYx7SCR7nsZPJWoUgybCQEThXTeot_1o5ee7FdJPaDCbl6cu-FbR4iNOvtF7ftslAAYNXK8/pub?gid=1013390825&single=true&output=csv"
+SUMMARY_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSCz5enmtipKvIlDtRbmlaZrH96myIi56hLwVPVtHVwNXAncHUV23_qn3RGmk8MDBHLP3aB9VpXADwB/pub?output=csv"
 
 # -----------------------------
 # SAFE CSV LOADER
@@ -533,3 +533,4 @@ with tab_savings:
                 savings_df.sort_values(["Date", "Title"], ascending=[False, True]),
                 width="stretch"
             )
+
