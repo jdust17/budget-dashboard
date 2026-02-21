@@ -79,11 +79,8 @@ MONTH_ORDER = [
 df["Month"] = pd.Categorical(df["Month"], categories=MONTH_ORDER, ordered=True)
 
 # -----------------------------
-# SIDEBAR FILTERS
+# FILTER OPTIONS (COMPUTED ONCE)
 # -----------------------------
-st.sidebar.header("Filters")
-
-# ✅ ADD: Quarterly filter (similar to monthly)
 quarter_options = (
     df["Quarter"]
     .dropna()
@@ -96,19 +93,6 @@ try:
 except Exception:
     quarter_options = sorted(quarter_options)
 
-selected_quarters = st.sidebar.multiselect(
-    "Select Quarter(s)",
-    options=quarter_options,
-    default=quarter_options
-)
-
-selected_months = st.sidebar.multiselect(
-    "Select Month(s)",
-    options=MONTH_ORDER,
-    default=MONTH_ORDER
-)
-
-# ✅ ADD: Category filter + Exclude Categories multi-select (from sheet categories)
 category_options = (
     df["Category"]
     .dropna()
@@ -120,40 +104,65 @@ category_options = (
 )
 category_options = sorted(category_options)
 
-selected_categories = st.sidebar.multiselect(
-    "Include Category(s)",
-    options=category_options,
-    default=category_options
-)
-
-excluded_categories_ui = st.sidebar.multiselect(
-    "Exclude Category(s)",
-    options=category_options,
-    default=[]
-)
-
-# ✅ UPDATED: Apply Quarter + Month + Category include/exclude filters
-df_filtered = df[
-    (df["Quarter"].isin(selected_quarters)) &
-    (df["Month"].isin(selected_months)) &
-    (df["Category"].isin(selected_categories)) &
-    (~df["Category"].isin(excluded_categories_ui))
-]
-
 # -----------------------------
 # EXPENSE FILTER (USED EVERYWHERE)
 # -----------------------------
 # 🔧 Tithes removed from exclusion so they count in expenses
 EXCLUDED_CATEGORIES = ["Income", "Investment", "Investments"]
 
-expense_df = df_filtered[~df_filtered["Category"].isin(EXCLUDED_CATEGORIES)]
-
 # -----------------------------
 # ✅ ADD: TABS
 # -----------------------------
 tab_dashboard, tab_savings = st.tabs(["Dashboard", "Savings"])
 
+# -----------------------------
+# ✅ OPTION 1: TAB-SCOPED FILTERS (WITH UNIQUE KEYS)
+# -----------------------------
+def apply_tab_filters(df_in: pd.DataFrame, key_prefix: str) -> pd.DataFrame:
+    st.subheader("Filters")
+
+    selected_quarters = st.multiselect(
+        "Select Quarter(s)",
+        options=quarter_options,
+        default=quarter_options,
+        key=f"{key_prefix}_selected_quarters"
+    )
+
+    selected_months = st.multiselect(
+        "Select Month(s)",
+        options=MONTH_ORDER,
+        default=MONTH_ORDER,
+        key=f"{key_prefix}_selected_months"
+    )
+
+    selected_categories = st.multiselect(
+        "Include Category(s)",
+        options=category_options,
+        default=category_options,
+        key=f"{key_prefix}_selected_categories"
+    )
+
+    excluded_categories_ui = st.multiselect(
+        "Exclude Category(s)",
+        options=category_options,
+        default=[],
+        key=f"{key_prefix}_excluded_categories_ui"
+    )
+
+    return df_in[
+        (df_in["Quarter"].isin(selected_quarters)) &
+        (df_in["Month"].isin(selected_months)) &
+        (df_in["Category"].isin(selected_categories)) &
+        (~df_in["Category"].isin(excluded_categories_ui))
+    ]
+
+
 with tab_dashboard:
+    # ✅ Filters only for Dashboard tab
+    df_filtered = apply_tab_filters(df, "dash")
+
+    expense_df = df_filtered[~df_filtered["Category"].isin(EXCLUDED_CATEGORIES)]
+
     # -----------------------------
     # KEY METRICS — EXPENSES ONLY
     # -----------------------------
@@ -389,6 +398,9 @@ with tab_dashboard:
         )
 
 with tab_savings:
+    # ✅ Filters only for Savings tab (independent keys)
+    df_filtered = apply_tab_filters(df, "sav")
+
     savings_df = df_filtered[df_filtered["Status"].astype(str).str.strip().eq("Savings")]
 
     # ✅ FIX: If no months selected (or filters produce empty df), behave like Dashboard (show zeros / empty charts)
