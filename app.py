@@ -62,7 +62,7 @@ def load_data():
 
     return df
 
-# Manual refresh
+# Manual refresh (keep in sidebar since it’s global)
 if st.sidebar.button("🔄 Refresh Data"):
     st.cache_data.clear()
 
@@ -116,38 +116,37 @@ EXCLUDED_CATEGORIES = ["Income", "Investment", "Investments"]
 tab_dashboard, tab_savings = st.tabs(["Dashboard", "Savings"])
 
 # -----------------------------
-# ✅ OPTION 1: TAB-SCOPED FILTERS (WITH UNIQUE KEYS)
+# ✅ TAB-SCOPED FILTERS IN A COLLAPSIBLE PANEL (SIDEBAR-LIKE)
 # -----------------------------
 def apply_tab_filters(df_in: pd.DataFrame, key_prefix: str) -> pd.DataFrame:
-    st.subheader("Filters")
+    with st.expander("🎛️ Filters", expanded=False):
+        selected_quarters = st.multiselect(
+            "Select Quarter(s)",
+            options=quarter_options,
+            default=quarter_options,
+            key=f"{key_prefix}_selected_quarters"
+        )
 
-    selected_quarters = st.multiselect(
-        "Select Quarter(s)",
-        options=quarter_options,
-        default=quarter_options,
-        key=f"{key_prefix}_selected_quarters"
-    )
+        selected_months = st.multiselect(
+            "Select Month(s)",
+            options=MONTH_ORDER,
+            default=MONTH_ORDER,
+            key=f"{key_prefix}_selected_months"
+        )
 
-    selected_months = st.multiselect(
-        "Select Month(s)",
-        options=MONTH_ORDER,
-        default=MONTH_ORDER,
-        key=f"{key_prefix}_selected_months"
-    )
+        selected_categories = st.multiselect(
+            "Include Category(s)",
+            options=category_options,
+            default=category_options,
+            key=f"{key_prefix}_selected_categories"
+        )
 
-    selected_categories = st.multiselect(
-        "Include Category(s)",
-        options=category_options,
-        default=category_options,
-        key=f"{key_prefix}_selected_categories"
-    )
-
-    excluded_categories_ui = st.multiselect(
-        "Exclude Category(s)",
-        options=category_options,
-        default=[],
-        key=f"{key_prefix}_excluded_categories_ui"
-    )
+        excluded_categories_ui = st.multiselect(
+            "Exclude Category(s)",
+            options=category_options,
+            default=[],
+            key=f"{key_prefix}_excluded_categories_ui"
+        )
 
     return df_in[
         (df_in["Quarter"].isin(selected_quarters)) &
@@ -155,7 +154,6 @@ def apply_tab_filters(df_in: pd.DataFrame, key_prefix: str) -> pd.DataFrame:
         (df_in["Category"].isin(selected_categories)) &
         (~df_in["Category"].isin(excluded_categories_ui))
     ]
-
 
 with tab_dashboard:
     # ✅ Filters only for Dashboard tab
